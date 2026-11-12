@@ -4,7 +4,7 @@ A live timeline of the day's regional nerve blocks for the block team: pre-block
 
 - **Page:** a single `index.html`, hosted free on GitHub Pages.
 - **Shared data:** Supabase. Every save shows up on every teammate's phone and computer within about a second.
-- **Sign-in:** one shared team password. Each phone or computer asks for it once and remembers it. The password is set in Supabase and never written in this code.
+- **Sign-in:** first name + last initial and one shared team password. Each phone or computer asks once and remembers it. Only names on the team list get in, and the board shows who last edited each patient. The password and the list both live in Supabase, never in this code.
 
 ## Privacy first
 
@@ -43,6 +43,10 @@ In Supabase, go to **Authentication → Users → Add user → Create new user**
 - Tick **Auto Confirm User**, then **Create user**.
 
 Share the board's address and the password with the team. To change the password later, open that user in **Authentication → Users** and reset it; everyone then re-enters the new one.
+
+### 5. Add the team list
+
+Open [`supabase/team-members.sql`](supabase/team-members.sql), put in one line per person (first name + last initial), and run it in the SQL Editor. Run it again any time to add people; the file also shows how to remove someone. You can also edit the list directly in **Table Editor → team_members**.
 
 Tip: on a phone, open the board in Safari or Chrome and use **Add to Home Screen** so it opens like an app.
 

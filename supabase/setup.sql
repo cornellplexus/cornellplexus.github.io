@@ -42,6 +42,22 @@ begin
   end if;
 end $$;
 
+-- Who may use the board: first name + last initial (e.g. "Jane D"). Kept here, not in the public code.
+-- Add or remove people with supabase/team-members.sql, or in Table Editor → team_members.
+create table if not exists public.team_members (
+  name_key      text primary key,   -- lowercase, letters and single spaces only, e.g. 'jane d'
+  display_name  text not null       -- as shown on the board, e.g. 'Jane D'
+);
+alter table public.team_members enable row level security;
+grant select on public.team_members to authenticated;
+revoke all on public.team_members from anon;
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'team_members' and policyname = 'team reads members') then
+    create policy "team reads members" on public.team_members for select to authenticated using (true);
+  end if;
+end $$;
+
 -- Live updates: send every change on these tables to everyone who has the board open.
 do $$
 begin

@@ -4,7 +4,7 @@ A live timeline of the day's regional nerve blocks for the block team: pre-block
 
 - **Page:** a single `index.html`, hosted free on GitHub Pages.
 - **Shared data:** Supabase. Every save shows up on every teammate's phone and computer within about a second.
-- **Sign-in:** team members sign in with a one-time email link. Only people you invite can get in.
+- **Sign-in:** one shared team password. Each phone or computer asks for it once and remembers it. The password is set in Supabase and never written in this code.
 
 ## Privacy first
 
@@ -18,7 +18,7 @@ Supabase's free plan is **not** covered by a HIPAA business associate agreement.
 2. Open **SQL Editor → New query**, paste everything in [`supabase/setup.sql`](supabase/setup.sql), and click **Run**.
 3. **Authentication → Sign In / Providers:**
    - Make sure **Email** is enabled.
-   - Turn **off** "Allow new users to sign up". This keeps strangers out; you'll invite the team instead.
+   - Turn **off** "Allow new users to sign up". The team shares one account (step 4), so no one else needs to sign up.
 4. **Project Settings → API** (or the **Connect** button): copy the **Project URL** and the **anon / publishable** key into [`config.js`](config.js). Never use the `service_role` / secret key.
 
 ### 2. Put the site on GitHub Pages
@@ -34,9 +34,15 @@ In Supabase, go to **Authentication → URL Configuration**:
 - **Site URL:** `https://<your-username>.github.io/<repo-name>/`
 - **Redirect URLs:** add the same address.
 
-### 4. Invite the team
+### 4. Create the shared team account
 
-In Supabase, go to **Authentication → Users → Invite user** and add each teammate's email. They get an email, click the link, and land on the board signed in. After that they sign in from the board with **Email me a sign-in link**.
+In Supabase, go to **Authentication → Users → Add user → Create new user**:
+
+- **Email:** the `teamEmail` in [`config.js`](config.js) (currently `team@cornellplexus.example.com`; it never receives mail)
+- **Password:** the team password
+- Tick **Auto Confirm User**, then **Create user**.
+
+Share the board's address and the password with the team. To change the password later, open that user in **Authentication → Users** and reset it; everyone then re-enters the new one.
 
 Tip: on a phone, open the board in Safari or Chrome and use **Add to Home Screen** so it opens like an app.
 

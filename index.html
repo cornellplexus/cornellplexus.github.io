@@ -692,9 +692,10 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 <div class="signin" id="signin" hidden>
   <form class="signin-card" id="signin-form">
     <h2>Block Board</h2>
-    <p>Sign in with your email to see the team's board. Only team members who've been invited can sign in.</p>
-    <label class="f">Email<input id="signin-email" type="email" autocomplete="email" required placeholder="you@hospital.org"></label>
-    <button class="primary" type="submit">Email me a sign-in link</button>
+    <p>Enter the team password. This device will remember it.</p>
+    <input type="text" name="username" autocomplete="username" value="Block team" hidden aria-hidden="true">
+    <label class="f">Team password<input id="signin-pw" type="password" autocomplete="current-password" required></label>
+    <button class="primary" type="submit">Open the board</button>
     <p class="hint" id="signin-msg" role="status"></p>
   </form>
 </div>
@@ -1057,27 +1058,29 @@ syncViewBtns();
 
 /* ---------- Supabase (team-shared, live) ---------- */
 const CFG = window.BLOCKBOARD_CONFIG || {};
-const hasSupabase = () => !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase && window.supabase.createClient);
+const hasSupabase = () => !!(CFG.supabaseUrl && CFG.supabaseAnonKey && CFG.teamEmail && window.supabase && window.supabase.createClient);
 const sbErr = error => ({ code: error && (error.code === "42501" || /row-level security|permission/i.test(error.message || "")) ? "invalid_argument" : "unavailable", message: error && error.message });
-// Show the sign-in screen until this person has a session. Only invited team members can sign in.
+// Show the team-password screen until this device is signed in. Everyone shares one team account;
+// its email is in config.js and its password lives only in Supabase (never in this code).
 function ensureSignedIn(sb) {
   return new Promise(resolve => {
-    const screen = $("#signin"), form = $("#signin-form"), msg = $("#signin-msg"), email = $("#signin-email");
-    const done = session => { screen.hidden = true; $("#signout").hidden = false; $("#signout").title = session.user.email || ""; resolve(session); };
-    sb.auth.onAuthStateChange((_ev, session) => { if (session && !screen.hidden) done(session); });
+    const screen = $("#signin"), form = $("#signin-form"), msg = $("#signin-msg"), pw = $("#signin-pw");
+    const done = session => { screen.hidden = true; $("#signout").hidden = false; resolve(session); };
     sb.auth.getSession().then(({ data }) => {
       if (data.session) return done(data.session);
       screen.hidden = false;
-      try { email.value = localStorage.getItem("blockboard.email") || ""; } catch (_) {}
+      setTimeout(() => pw.focus(), 50);
       form.addEventListener("submit", async ev => {
         ev.preventDefault();
-        const addr = email.value.trim(); if (!addr) return;
-        try { localStorage.setItem("blockboard.email", addr); } catch (_) {}
-        msg.textContent = "Sending…";
-        const { error } = await sb.auth.signInWithOtp({ email: addr, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-        msg.textContent = error
-          ? (/not allowed|signups not allowed|not found/i.test(error.message) ? "That email isn't on the team list. Ask whoever runs the board to invite you." : "Couldn't send the link: " + error.message)
-          : `Check ${addr} for a sign-in link. Open it on this device.`;
+        if (!pw.value) return;
+        msg.textContent = "Checking…";
+        const { data: d, error } = await sb.auth.signInWithPassword({ email: CFG.teamEmail, password: pw.value });
+        if (error || !d.session) {
+          msg.textContent = /invalid/i.test(error && error.message || "") ? "That password isn't right. Try again." : "Couldn't sign in: " + (error ? error.message : "no session");
+          pw.select(); return;
+        }
+        pw.value = ""; msg.textContent = "";
+        done(d.session);
       });
     });
   });

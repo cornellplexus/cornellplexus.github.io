@@ -5,6 +5,6 @@
 // Never paste the "service_role" / "secret" key here.
 // Leave both empty to run the board on one device only (handy for testing).
 window.BLOCKBOARD_CONFIG = {
-  supabaseUrl: "",
-  supabaseAnonKey: ""
+  supabaseUrl: "https://cskrawvrynicchqfmhlg.supabase.co",
+  supabaseAnonKey: "sb_publishable_YjWEWxIlhxUWaFvUeUFNnQ_k-XbnFhw"
 };

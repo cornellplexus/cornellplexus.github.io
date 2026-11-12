@@ -20,6 +20,9 @@ create table if not exists public.learned (
 );
 
 -- Only signed-in team members can read or change anything. Anonymous visitors see nothing.
+-- (Newer Supabase projects don't grant table access automatically, so grant it to signed-in users explicitly.)
+grant select, insert, update, delete on public.blocks, public.learned to authenticated;
+revoke all on public.blocks, public.learned from anon;
 alter table public.blocks  enable row level security;
 alter table public.learned enable row level security;
 

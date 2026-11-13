@@ -906,12 +906,12 @@ function suggestFor(e, b) {
   if (!b || !b.type || b.type === "Other" || b.type === "Intrathecal catheter") return null;
   const surg = b.intent === "surgical";
   if (b.type === "Spinal" || b.type === "Combined spinal-epidural") return { drug: "bupi", pct: 0.75 };
-  if (b.type === "Epidural") return surg ? { drug: "lido", pct: 2 } : { drug: "ropi", pct: 0.2 };
+  if (b.type === "Epidural") return surg ? { drug: "lido", pct: 2 } : { drug: "bupi", pct: 0.125 };
   if (b.type === "Caudal") return { drug: "bupi", pct: 0.25 };
   if (b.type === "Paravertebral") return { drug: "bupi", pct: 0.5 };          // highest concentration possible
   if (isPeds(e)) return { drug: "ropi", pct: surg ? 0.5 : 0.2 };            // peds guideline: ropivacaine 0.2–0.5%
   if (FASCIAL.includes(b.type) || b.type === "Ilioinguinal") return { drug: "bupi", pct: surg ? 0.5 : 0.25 };
-  return { drug: "ropi", pct: surg ? 0.5 : 0.2 };                           // peripheral nerve blocks
+  return { drug: "bupi", pct: surg ? 0.5 : 0.25 };                          // peripheral nerve blocks
 }
 const SHORT_TASK ={ called: "call", inSpace: "arrival", spoke: "talk", marked: "site mark", consent: "consent", kit: "kit" };
 
@@ -2037,7 +2037,7 @@ function addEntry(orRequest) {
   const id = store.newId();
   const e = normalize({ id, date: state.date, time: orRequest ? nowHM() : defaultTime(), createdAt: new Date().toISOString(),
     intraopRequest: !!orRequest, intraop: !!orRequest, location: orRequest ? "OR " : "",
-    blocks: [{ type: "", side: "", catheter: false, intent: "analgesic" }], meds: [{ drug: "ropi", pct: 0.5, ml: "", epi: 0, dexOn: false, block: 0, auto: true }] });
+    blocks: [{ type: "", side: "", catheter: false, intent: "analgesic" }], meds: [{ drug: "bupi", pct: 0.25, ml: "", epi: 0, dexOn: false, block: 0, auto: true }] });
   state.docs.set(id, e); state.loaded = true;
   touch(id, 0);
   openEditor(id);
@@ -2107,7 +2107,7 @@ document.addEventListener("click", ev => {
     case "add-med": {
       const j = b.dataset.b === undefined ? "" : +b.dataset.b;
       const s = j === "" ? null : suggestFor(e, e.blocks[j]);
-      e.meds.push({ drug: s ? s.drug : "ropi", pct: s ? s.pct : 0.2, ml: "", epi: 0, dexOn: false, block: j, auto: !!s });
+      e.meds.push({ drug: s ? s.drug : "bupi", pct: s ? s.pct : 0.25, ml: "", epi: 0, dexOn: false, block: j, auto: !!s });
       if (s) applySuggestion(e, j, false);
       rebuildBM(e); break;
     }

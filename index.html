@@ -536,7 +536,7 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
       <h2>Block additives</h2>
       <table class="gt"><tbody>
         <tr><th>Decadron</th><td>2 clicks (2 mg) per 20 mL</td></tr>
-        <tr><th>Epinephrine</th><td>1 click (100 mcg) per 20 mL = 1:200,000. Fascial plane blocks only (plus paravertebrals).</td></tr>
+        <tr><th>Epinephrine</th><td>1 click (100 mcg) per 20 mL = 1:200,000.</td></tr>
         <tr><th>ED hip fracture study block</th><td>Decadron 4 mg + epi 150 mcg in 30 mL</td></tr>
       </tbody></table>
       <p class="hint">The board adds these automatically when you tap + Decadron or + Epinephrine on a syringe.</p>
@@ -764,7 +764,7 @@ const BLOCK_GROUPS = {
 };
 const NEURAX = ["Spinal", "Epidural", "Combined spinal-epidural", "Intrathecal catheter", "Caudal"];
 const EPIDURALISH = ["Epidural", "Combined spinal-epidural", "Intrathecal catheter"];
-// Epinephrine is offered only for syringes linked to one of these (fascial plane blocks, plus paravertebrals per team practice).
+// Fascial plane blocks (used for drug/strength suggestions). Epinephrine is offered for any block.
 const FASCIAL = ["Erector spinae (ESP)", "Paravertebral", "PECS I", "PECS II", "Serratus anterior", "External oblique intercostal (EOI)", "PIFB", "TAP", "Quadratus lumborum", "Rectus sheath", "Fascia iliaca", "PENG", "iPACK"];
 // Peds volumes (WCMC Pediatric Regional Dosing Guidelines, Sept 2025): [mL/kg low, high, max mL used in calc, max label]
 const PEDS_VOL = {
@@ -959,7 +959,7 @@ const isPeds = e => { const a = ageOf(e); return a != null && a < 18; };
 function medRules(e, m) {
   const b = m.block !== "" && m.block != null ? e.blocks[m.block] : null;
   const a = ageOf(e), peds = isPeds(e), infant = peds && a < 1;
-  return { b, peds, infant, epiOk: !!b && FASCIAL.includes(b.type), dexOk: !(b && isNeur(b.type)) && !infant,
+  return { b, peds, infant, epiOk: true, dexOk: !(b && isNeur(b.type)) && !infant,
     dexFixed: peds && !infant ? (a <= 12 ? 0.5 : 1) : null };
 }
 function labStatus(e) {
@@ -1738,8 +1738,6 @@ function addonsHTML(e, i) {
     : `<span class="hint">${r.infant ? "Infant: avoid Decadron." : "No Decadron for neuraxial."}</span>`;
   if (r.peds) h += `<span class="hint">Peds: default to plain local; confirm adjuncts with the attending.${r.dexFixed != null ? ` Decadron ${r.dexFixed} mg per block (${r.dexFixed === 1 ? "adolescent" : "school-age"}).` : ""}</span>`;
   if (d.fixed) return h;
-  if (!r.b) return h + `<span class="hint">Choose the block to see whether epinephrine applies.</span>`;
-  if (!r.epiOk) return h + `<span class="hint">Epinephrine: fascial plane blocks and paravertebrals only.</span>`;
   const on = num(m.epi) > 0;
   h += `<button type="button" class="addon" data-act="med-epi" data-i="${i}" aria-pressed="${on}">${on ? `✓ Epi ${ml ? fmtMg(ml * EPI_PER_ML) + " mcg" : "5 mcg/mL"}` : "+ Epinephrine"}</button>`;
   return h;

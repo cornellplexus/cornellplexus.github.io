@@ -309,6 +309,10 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
   .gnav { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
   .gnav button { white-space: nowrap; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; }
 }
+.savebox { border: 1px dashed var(--accent); border-radius: 9px; padding: 10px 12px; display: grid; gap: 6px; }
+.savebox .src { font-size: .66rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.saverow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.saverow .planbtn { height: 38px; }
 /* Phones: a more compact scale (text ~12% smaller, tighter spacing, smaller controls) */
 @media (max-width: 520px) {
   html { font-size: 14px; }
@@ -850,6 +854,7 @@ const SURGERY_RULES = [
   { re: /\bmvr\b|mitral|mini[- ]?thoracotomy/, label: "Robotic MVR", blocks: [["Paravertebral", { side: "R", intent: "surgical" }]], note: "Highest concentration possible, 3 levels: T3, T5, T7. Bupivacaine + Decadron + epi." },
   { re: /sternotomy|cabg|\bavr\b|cardiac/, label: "Sternotomy", blocks: [["PIFB", { side: "Bilat" }]] },
   { re: /esophagectomy/, label: "Esophagectomy", blocks: [["Epidural"]], note: "Thoracic epidural. Dilaudid PCEA 4/3/10/22 (Dilaudid 10 mcg/mL only) plus a Dilaudid 500 mcg syringe." },
+  { re: /single[- ]?port/, label: "Single-port thoracic", blocks: [["External oblique intercostal (EOI)"]] },
   { re: /thoracotomy|\bvats\b|lobectomy|wedge resection|rib f/, label: "Thoracic", blocks: [["Erector spinae (ESP)", { catheter: true }]] },
   { re: /mastectomy|breast|lumpectomy/, label: "Breast", blocks: [["PECS II"]] },
   { re: /laparotomy|whipple|pancreat|exploratory|open (colectomy|hemicolectomy|abdominal)/, label: "Open abdominal", blocks: [["Epidural"]] },
@@ -928,7 +933,7 @@ function normalize(d) {
     date: state.date, time: "", location: "", age: "", sex: "", weightKg: "", heightCm: "", indication: "", intraop: false,
     anticoag: [], anticoagNote: "", bleedRisk: false, bleedNote: "", infection: false, infectionNote: "", notes: "",
     blocks: [], neuraxial: {}, meds: [], doseWeight: "actual", tasks: {}, status: "active",
-    source: "", neuroDeficit: false, neuroNote: "", wf: {}, intraopRequest: false, consentFrom: "",
+    source: "", neuroDeficit: false, neuroNote: "", wf: {}, intraopRequest: false, consentFrom: "", allergies: "",
     timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "",
   }, d);
   e.neuraxial = Object.assign({ plt: "", inr: "", ptt: "", spine: "" }, e.neuraxial || {});
@@ -1417,6 +1422,8 @@ function cardInfoHTML(e) {
   }
   // History
   const h = [];
+  const al = String(e.allergies || "").trim();
+  if (al) h.push(/^(nkda|nka|none|no known( drug)? allergies)\.?$/i.test(al) ? chip("NKDA") : chip("Allergies: " + al, "crit"));
   if (e.bleedRisk) h.push(chip("Bleeding risk" + (e.bleedNote ? ": " + e.bleedNote : ""), "crit"));
   if (e.infection) h.push(chip("Infection" + (e.infectionNote ? ": " + e.infectionNote : " at site"), "crit"));
   if (e.neuroDeficit) h.push(chip("Neuro deficit" + (e.neuroNote ? ": " + e.neuroNote : ""), "warn"));
@@ -1571,6 +1578,7 @@ function renderEditor() {
     <section class="sec"><h3>Pre-block checklist</h3><div class="tasks" id="ed-tasks" style="border:0;padding:0">${tasksHTML(e)}</div></section>
 
     <section class="sec"><h3>Pertinent history</h3>
+      <label class="f">Allergies<input id="f-allergies" type="text" data-f="allergies" value="${esc(e.allergies)}" placeholder="NKDA, or e.g. penicillin (rash), latex"></label>
       <div class="hint">Blood thinners</div>
       <div class="toggles" id="ed-ac">${acToggles(e)}</div>
       <label class="f">Last dose / details<input id="f-acnote" type="text" data-f="anticoagNote" value="${esc(e.anticoagNote)}" placeholder="Lovenox 40 mg last 20:00 yesterday"></label>
@@ -1586,6 +1594,14 @@ function renderEditor() {
       <div id="ed-blocks" style="display:grid;gap:8px">${blocksHTML(e)}</div>
       <button class="add" data-act="add-block">+ Add block</button>
       <div id="ed-neur">${neurHTML(e)}</div>
+      <div class="savebox">
+        <div class="src">Save as the usual plan</div>
+        <p class="hint">Saves these blocks and syringes. Any future surgery containing the phrase below gets them as the suggestion.</p>
+        <div class="saverow">
+          <label class="f">For surgeries containing<input id="f-learnkey" type="text" value="${esc(surgeryKey(e.indication))}" placeholder="e.g. single port"></label>
+          <button type="button" class="planbtn" data-act="save-plan">Save plan</button>
+        </div>
+      </div>
     </section>
     <div id="ed-wfwrap">${wfHTML(e)}</div>
 
@@ -1841,6 +1857,7 @@ function onField(ev) {
     editorEl.querySelector("#ed-tasks").innerHTML = tasksHTML(e);
   }
   if (f === "consentFrom") editorEl.querySelector("#ed-tasks").innerHTML = tasksHTML(e);
+  if (f === "indication") { const lk = editorEl.querySelector("#f-learnkey"); if (lk && !lk.dataset.touched) lk.value = surgeryKey(v); }
   if (["caseStart", "orMinutes", "caseStartedAt"].includes(f)) {
     recomputeTime(e);
     const ti = editorEl.querySelector("#f-time"); if (ti) ti.value = e.time;
@@ -1855,6 +1872,7 @@ editorEl.addEventListener("change", ev => {
   const k = `${state.selected}|${p.dataset.src}|${p.dataset.type}`;
   p.checked ? state.planOff.delete(k) : state.planOff.add(k);
 });
+editorEl.addEventListener("input", ev => { if (ev.target.id === "f-learnkey") ev.target.dataset.touched = "1"; });
 editorEl.addEventListener("input", onField);
 editorEl.addEventListener("change", onField);
 
@@ -1887,6 +1905,15 @@ const learnId = k => k.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0
 function bestLearned(e) {
   const key = learnKey(e); if (!key) return null;
   let doc = state.learned.get(learnId(key));
+  if (!doc) { // a saved phrase that appears in this surgery, e.g. "single port" in "R single port lobectomy" (longest phrase wins)
+    const peds = key.startsWith("peds "), core = " " + key.replace(/^peds /, "") + " ";
+    let bestLen = 0;
+    for (const d of state.learned.values()) {
+      const dk = String(d.key || ""); if (dk.startsWith("peds ") !== peds) continue;
+      const phrase = dk.replace(/^peds /, "");
+      if (phrase && core.includes(" " + phrase + " ") && phrase.length > bestLen) { bestLen = phrase.length; doc = d; }
+    }
+  }
   if (!doc) { // closest earlier surgery with mostly the same words
     const toks = new Set(key.split(" ")); let best = 0;
     for (const d of state.learned.values()) {
@@ -1897,13 +1924,16 @@ function bestLearned(e) {
     }
   }
   if (!doc || !Array.isArray(doc.patterns) || !doc.patterns.length) return null;
-  const p = [...doc.patterns].sort((a, b) => (b.count - a.count) || String(b.last).localeCompare(String(a.last)))[0];
+  // a plan someone saved on purpose comes first; then the one done most often
+  const p = [...doc.patterns].sort((a, b) => (!!b.saved - !!a.saved) || (b.count - a.count) || String(b.last).localeCompare(String(a.last)))[0];
   return { doc, p };
 }
-function learnFrom(e) {
-  const key = learnKey(e); if (!key || !store.learnSet) return;
+// Learn from this patient. With `phrase`, save it on purpose as the usual plan for any surgery containing that phrase.
+function learnFrom(e, phrase) {
+  const key = phrase ? (isPeds(e) ? "peds " : "") + surgeryKey(phrase) : learnKey(e);
+  if (!key || key === "peds " || !store.learnSet) return false;
   const used = e.blocks.map((b, i) => ({ b, i })).filter(x => x.b.type);
-  if (!used.length) return;
+  if (!used.length) return false;
   const side = sideFromText(String(e.indication).toLowerCase());
   const idx = {}; used.forEach((x, n) => idx[x.i] = n);
   const blocks = used.map(({ b }) => ({ type: b.type, custom: b.custom || "", catheter: !!b.catheter, intent: b.intent || "analgesic",
@@ -1917,11 +1947,14 @@ function learnFrom(e) {
   delete doc.id; doc.key = key;
   const now = new Date().toISOString();
   const p = doc.patterns.find(x => x.sig === sig);
-  if (p) { p.count = (p.count || 0) + 1; p.last = now; p.meds = meds; p.example = e.indication; }
-  else doc.patterns.push({ sig, count: 1, last: now, blocks, meds, example: e.indication });
-  doc.patterns = doc.patterns.sort((a, b) => b.count - a.count).slice(0, 8);
+  if (phrase) doc.patterns.forEach(x => { x.saved = false; }); // only one saved-on-purpose plan per phrase
+  if (p) { p.count = (p.count || 0) + 1; p.last = now; p.meds = meds; p.example = e.indication; if (phrase) p.saved = true; }
+  else doc.patterns.push({ sig, count: 1, last: now, blocks, meds, example: e.indication, saved: !!phrase });
+  doc.patterns = doc.patterns.sort((a, b) => (!!b.saved - !!a.saved) || (b.count - a.count)).slice(0, 8);
   state.learned.set(id, { ...doc, id });
-  store.learnSet(id, doc).then(() => toast(`Learned: ${key}`), err => toast(errMsg(err)));
+  const shown = key.replace(/^peds /, "");
+  store.learnSet(id, doc).then(() => toast(phrase ? `Saved. Future “${shown}” cases will suggest this plan.` : `Learned: ${shown}`), err => toast(errMsg(err)));
+  return true;
 }
 function rulePlanSummary(blocks) { return blocks.map(b => blockLabel(b)).join(" + "); }
 function learnedSummary(e, p) {
@@ -1953,7 +1986,7 @@ function planBoxHTML(e) {
   let h = "";
   if (L) {
     const s = learnedSummary(e, L.p);
-    h += `<div class="planbox"><div class="src">Your team's usual plan · done ${L.p.count}× for “${esc(L.doc.key)}”</div>
+    h += `<div class="planbox"><div class="src">${L.p.saved ? "Your team's saved plan" : `Your team's usual plan · done ${L.p.count}×`} for “${esc(String(L.doc.key).replace(/^peds /, ""))}”</div>
       ${pickList(e, "learned", s.blocks, k => L.p.meds.filter(m => m.block === k).map(medShort).join(" · "))}</div>`;
   }
   if (R && (!L || rulePlanSummary(R.blocks) !== learnedSummary(e, L.p).text)) {
@@ -2035,6 +2068,14 @@ document.addEventListener("click", ev => {
       break;
     }
     case "done": e.status = "done"; e.doneAt = new Date().toISOString(); if (!e.example) learnFrom(e); break;
+    case "save-plan": {
+      const phrase = (editorEl.querySelector("#f-learnkey") || {}).value || e.indication;
+      if (!surgeryKey(phrase)) { toast("Type the surgery phrase to save this plan under, e.g. single port."); return; }
+      if (!e.blocks.some(x => x.type)) { toast("Add at least one block first."); return; }
+      learnFrom(e, phrase); renderLearned();
+      const pb = editorEl.querySelector("#ed-plan"); if (pb) pb.innerHTML = planBoxHTML(e);
+      return;
+    }
     case "plan": {
       const box = b.closest(".planbox");
       const picks = box ? [...box.querySelectorAll("input[data-pick]:checked:not(:disabled)")].map(x => +x.dataset.pick) : null;

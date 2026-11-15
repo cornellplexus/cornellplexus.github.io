@@ -971,13 +971,15 @@ function normalize(d) {
     anticoag: [], anticoagNote: "", bleedRisk: false, bleedNote: "", infection: false, infectionNote: "", notes: "",
     blocks: [], neuraxial: {}, meds: [], doseWeight: "actual", tasks: {}, status: "active",
     source: "", neuroDeficit: false, neuroNote: "", wf: {}, intraopRequest: false, consentFrom: "", allergies: "",
-    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y",
+    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y", pmh: "", homeMeds: "",
   }, d);
-  // Older imported entries kept the surgeon as a "Surgeon: …" line in notes; move it into its own field.
-  if (!e.surgeon && typeof e.notes === "string") {
-    const sm = /^Surgeon:\s*(.+)$/m.exec(e.notes);
-    if (sm) { e.surgeon = sm[1].trim(); e.notes = e.notes.replace(/^Surgeon:.*(\n|$)/m, "").trim(); }
-  }
+  // Older imported entries kept surgeon / PMH / meds as lines in notes; move each into its own field.
+  [["surgeon", /^Surgeon:\s*(.+)$/m, /^Surgeon:.*(\n|$)/m], ["pmh", /^PMH\/PSH:\s*(.+)$/m, /^PMH\/PSH:.*(\n|$)/m], ["homeMeds", /^Meds:\s*(.+)$/m, /^Meds:.*(\n|$)/m]]
+    .forEach(([k, find, strip]) => {
+      if (e[k] || typeof e.notes !== "string") return;
+      const m = find.exec(e.notes);
+      if (m) { e[k] = m[1].trim(); e.notes = e.notes.replace(strip, "").trim(); }
+    });
   e.neuraxial = Object.assign({ plt: "", inr: "", ptt: "", spine: "" }, e.neuraxial || {});
   e.wf = e.wf && typeof e.wf === "object" ? e.wf : {};
   e.tasks = e.tasks || {};
@@ -1475,6 +1477,8 @@ function cardInfoHTML(e) {
   if (e.infection) h.push(chip("Infection" + (e.infectionNote ? ": " + e.infectionNote : " at site"), "crit"));
   if (e.neuroDeficit) h.push(chip("Neuro deficit" + (e.neuroNote ? ": " + e.neuroNote : ""), "warn"));
   if (deep && n.spine) h.push(chip("Spine: " + n.spine, "warn"));
+  if (e.pmh) h.push(`<span class="note"><b>PMH/PSH:</b> ${esc(e.pmh)}</span>`);
+  if (e.homeMeds) h.push(`<span class="note"><b>Meds:</b> ${esc(e.homeMeds)}</span>`);
   if (e.notes) h.push(`<span class="note">${esc(e.notes)}</span>`);
   rows.push(row("History", h.length ? h.join("") : none("Nothing flagged")));
   return `<dl class="cinfo">${rows.join("")}</dl>`;
@@ -1627,6 +1631,8 @@ function renderEditor() {
 
     <section class="sec"><h3>Pertinent history</h3>
       <label class="f">Allergies<input id="f-allergies" type="text" data-f="allergies" value="${esc(e.allergies)}" placeholder="NKDA, or e.g. penicillin (rash), latex"></label>
+      <label class="f">PMH / PSH<textarea id="f-pmh" data-f="pmh" rows="2" placeholder="HTN, DM2, OSA on CPAP, prior L TKA…">${esc(e.pmh)}</textarea></label>
+      <label class="f">Medications<textarea id="f-homemeds" data-f="homeMeds" rows="2" placeholder="Home meds, e.g. metoprolol, metformin, gabapentin…">${esc(e.homeMeds)}</textarea></label>
       <div class="hint">Blood thinners</div>
       <div class="toggles" id="ed-ac">${acToggles(e)}</div>
       <label class="f">Last dose / details<input id="f-acnote" type="text" data-f="anticoagNote" value="${esc(e.anticoagNote)}" placeholder="Lovenox 40 mg last 20:00 yesterday"></label>
@@ -2322,13 +2328,11 @@ function impPatient(chunk, date) {
   const allergies = f.allergies && !blankish(f.allergies) ? f.allergies : "";
   if (!allergies) warn.push("Allergies not on file.");
   const surgeon = f.surgeon && !blankish(f.surgeon) ? f.surgeon.replace(/^dr\.?\s+/i, "") : "";
-  const notes = [
-    f.pmh && !blankish(f.pmh) && "PMH/PSH: " + f.pmh,
-    f.meds && !blankish(f.meds) && "Meds: " + f.meds,
-    f.plan && "Plan (from email): " + f.plan,
-  ].filter(Boolean).join("\n");
+  const pmh = f.pmh && !blankish(f.pmh) ? f.pmh : "";
+  const homeMeds = f.meds && !blankish(f.meds) ? f.meds : "";
+  const notes = f.plan ? "Plan (from email): " + f.plan : "";
   const e = normalize({ date, time: t ? t.time : "", location: room, createdAt: new Date().toISOString(), indication: proc,
-    age, ageUnit, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon,
+    age, ageUnit, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon, pmh, homeMeds,
     neuraxial: { plt, inr, ptt, spine: "" }, blocks: [], meds: [], imported: true });
   plan.blocks.forEach(b => {
     const j = e.blocks.push({ ...b, intent: plan.surgical ? "surgical" : "analgesic" }) - 1;
@@ -2366,6 +2370,8 @@ function impRender() {
         ${row("Where", e.intraop ? "In the OR (verbal consent)" : "Block area")}
         ${row("Patient", [ageLabel(e), e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
         ${row("Allergies", e.allergies ? esc(e.allergies) : none("Not on file"))}
+        ${row("PMH/PSH", e.pmh ? esc(e.pmh) : none("Not on file"))}
+        ${row("Meds", e.homeMeds ? esc(e.homeMeds) : none("Not on file"))}
         ${row("Blood thinners", ac ? esc(ac) + (e.anticoagNote ? `<span class="sub">${esc(e.anticoagNote)}</span>` : "") : none("None listed"))}
         ${labs ? row("Labs", esc(labs)) : ""}
         ${row("Notes", `<span class="note">${esc(e.notes).replace(/\n/g, "<br>")}</span>`)}

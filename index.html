@@ -413,7 +413,8 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .anes-neuraxial { background: var(--warn-soft); color: var(--warn); }
 .anes-tbd { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--line) !important; }
 .anes-tag { font-style: normal; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 5px; border-radius: 4px; margin-left: 4px; }
-.anesrow { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.anesrow { display: grid; gap: 6px; }
+.tog.anesbtn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .labdate { font-size: .76rem; color: var(--muted); }
 .agerow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
 .agerow select { width: auto; padding: 0 4px; }
@@ -991,7 +992,7 @@ function normalize(d) {
     anticoag: [], anticoagNote: "", bleedRisk: false, bleedNote: "", infection: false, infectionNote: "", notes: "",
     blocks: [], neuraxial: {}, meds: [], doseWeight: "actual", tasks: {}, status: "active",
     source: "", neuroDeficit: false, neuroNote: "", wf: {}, intraopRequest: false, consentFrom: "", allergies: "",
-    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y", pmh: "", homeMeds: "", anesPlan: "",
+    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y", pmh: "", homeMeds: "", anes: [],
   }, d);
   // Older imported entries kept surgeon / PMH / meds as lines in notes; move each into its own field.
   [["surgeon", /^Surgeon:\s*(.+)$/m, /^Surgeon:.*(\n|$)/m], ["pmh", /^PMH\/PSH:\s*(.+)$/m, /^PMH\/PSH:.*(\n|$)/m], ["homeMeds", /^Meds:\s*(.+)$/m, /^Meds:.*(\n|$)/m]]
@@ -1001,6 +1002,10 @@ function normalize(d) {
       if (m) { e[k] = m[1].trim(); e.notes = e.notes.replace(strip, "").trim(); }
     });
   e.neuraxial = Object.assign({ plt: "", inr: "", ptt: "", spine: "", labDate: "" }, e.neuraxial || {});
+  // Anesthesia is a stack of choices (GA, Block, Epidural, Spinal, CSE, TBD). Older single choices convert.
+  if (!Array.isArray(e.anes)) e.anes = [];
+  if (e.anesPlan && !e.anes.length) e.anes = { ga: ["ga", "block"], surgical: ["block"], neuraxial: ["spinal", "block"], tbd: ["tbd"] }[e.anesPlan] || [];
+  delete e.anesPlan;
   e.wf = e.wf && typeof e.wf === "object" ? e.wf : {};
   e.tasks = e.tasks || {};
   if (e.tasks.marked === "no") e.tasks.marked = null;            // surgeon mark is now a single Done step
@@ -1510,7 +1515,7 @@ function cardHTML(e) {
   const st = stateOf(e), p = progress(e);
   const pillTxt = { done: "Done", cancelled: "Cancelled", ready: "Ready", issue: "Check", pending: `${p.done}/${p.total}` }[st];
   const tags = [];
-  if (e.anesPlan) tags.push(`<span class="chip anes anes-${e.anesPlan}">${anesLabel(e.anesPlan)}</span>`);
+  if (e.anes.length) tags.push(`<span class="chip anes ${anesClass(e)}">${esc(anesText(e))}</span>`);
   if (e.intraopRequest) tags.push(`<span class="chip crit">OR request</span>`);
   if (isPeds(e)) tags.push(`<span class="chip peds-chip">Peds</span>`);
   if (e.source) tags.push(`<span class="chip">From ${esc(e.source)}</span>`);
@@ -1583,7 +1588,7 @@ function compactHTML(e) {
   return `<li class="crow-s st-${st}${state.selected === e.id ? " selected" : ""}${exp ? " open" : ""}" data-id="${esc(e.id)}">
     <span class="ctime${e.timing === "end" ? " est" : ""}">${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}</span>
     <button type="button" class="cmain" data-act="open" title="Edit patient details">
-      <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.anesPlan ? ` <em class="anes-tag anes-${e.anesPlan}">${anesLabel(e.anesPlan)}</em>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
+      <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.anes.length ? ` <em class="anes-tag ${anesClass(e)}">${esc(anesText(e))}</em>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
       <span class="cl2">${blocks ? esc(blocks) : "Block not chosen"}</span>
     </button>
     <span class="cright tip" tabindex="0" data-tip="${esc(waitTip(e))}">${right}</span>
@@ -1663,6 +1668,13 @@ function renderEditor() {
       <label class="f">Allergies<input id="f-allergies" type="text" data-f="allergies" value="${esc(e.allergies)}" placeholder="NKDA, or e.g. penicillin (rash), latex"></label>
       <label class="f">PMH / PSH<textarea id="f-pmh" data-f="pmh" rows="2" placeholder="HTN, DM2, OSA on CPAP, prior L TKA…">${esc(e.pmh)}</textarea></label>
       <label class="f">Medications<textarea id="f-homemeds" data-f="homeMeds" rows="2" placeholder="Home meds, e.g. metoprolol, metformin, gabapentin…">${esc(e.homeMeds)}</textarea></label>
+      <div class="hint">Labs</div>
+      <div class="row-grid">
+        <label class="f">Plt ×10³<input id="f-plt" class="num" type="number" inputmode="numeric" min="0" data-f="neuraxial.plt" data-num value="${esc(e.neuraxial.plt)}"></label>
+        <label class="f">INR<input id="f-inr" class="num" type="number" inputmode="decimal" min="0" step="0.1" data-f="neuraxial.inr" data-num value="${esc(e.neuraxial.inr)}"></label>
+        <label class="f">PTT<input id="f-ptt" class="num" type="number" inputmode="decimal" min="0" step="0.1" data-f="neuraxial.ptt" data-num value="${esc(e.neuraxial.ptt)}"></label>
+        <label class="f">Drawn on<input id="f-labdate" type="date" data-f="neuraxial.labDate" value="${esc(e.neuraxial.labDate)}"></label>
+      </div>
       <div class="hint">Blood thinners</div>
       <div class="toggles" id="ed-ac">${acToggles(e)}</div>
       <label class="f">Last dose / details<input id="f-acnote" type="text" data-f="anticoagNote" value="${esc(e.anticoagNote)}" placeholder="Lovenox 40 mg last 20:00 yesterday"></label>
@@ -1675,7 +1687,7 @@ function renderEditor() {
     </section>
 
     <section class="sec"><h3>Blocks and medication</h3>
-      <div class="anesrow"><span class="bmeds-h">Anesthetic plan</span><div class="seg" id="ed-anes" role="group" aria-label="Anesthetic plan">${anesSegHTML(e)}</div></div>
+      <div class="anesrow"><span class="bmeds-h">Anesthesia (tap all that apply)</span><div class="toggles" id="ed-anes" role="group" aria-label="Anesthesia">${anesSegHTML(e)}</div></div>
       <div id="ed-blocks" style="display:grid;gap:8px">${blocksHTML(e)}</div>
       <button class="add" data-act="add-block">+ Add block</button>
       <div id="ed-neur">${neurHTML(e)}</div>
@@ -1752,9 +1764,20 @@ function labDateText(e) {
   const rel = days === 0 ? "same day" : days === 1 ? "1 day before" : days > 1 ? `${days} days before` : "after the block date?";
   return `${md} (${rel})`;
 }
-const ANES = [["ga", "GA + block"], ["surgical", "Surgical block"], ["neuraxial", "Spinal + block"], ["tbd", "Anesthesia TBD"]];
-const anesLabel = k => (ANES.find(a => a[0] === k) || [])[1] || "";
-const anesSegHTML = e => ANES.map(([k, l]) => `<button type="button" data-act="anes" data-v="${k}" aria-pressed="${e.anesPlan === k}">${l}</button>`).join("");
+const ANES = [["ga", "GA"], ["block", "Block"], ["epidural", "Epidural"], ["spinal", "Spinal"], ["cse", "CSE"], ["tbd", "Anesthesia TBD"]];
+// "GA + Block", "Spinal + Block", "Block only", "Anesthesia TBD"…
+function anesText(e) {
+  const a = ANES.filter(([k]) => e.anes.includes(k)).map(([, l]) => l);
+  return a.length === 1 && a[0] === "Block" ? "Block only" : a.join(" + ");
+}
+function anesClass(e) {
+  const s = new Set(e.anes);
+  if (s.has("tbd") && s.size === 1) return "anes-tbd";
+  if (s.has("ga")) return "anes-ga";
+  if (s.has("spinal") || s.has("cse") || s.has("epidural")) return "anes-neuraxial";
+  return "anes-surgical";
+}
+const anesSegHTML = e => ANES.map(([k, l]) => `<button type="button" class="tog anesbtn" data-act="anes" data-v="${k}" aria-pressed="${e.anes.includes(k)}">${e.anes.includes(k) ? "✓ " : ""}${l}</button>`).join("");
 function consentFromHTML(e) {
   if (!e.intraopRequest) return "";
   return `<label class="f">Phone consent from<input id="f-cfrom" type="text" data-f="consentFrom" value="${esc(e.consentFrom)}" placeholder="Relationship, e.g. daughter (HCP)"></label>`;
@@ -1811,14 +1834,8 @@ function neurHTML(e) {
   const n = e.neuraxial;
   return `<div class="row" style="background:var(--accent-soft);border-color:transparent">
     <strong style="font-size:.85rem">${hasNeur(e) ? "Neuraxial checks" : "Deep block checks (neuraxial rules apply)"}</strong>
-    <div class="row-grid">
-      <label class="f">Plt ×10³ (need &gt;100)<input id="f-plt" class="num" type="number" inputmode="numeric" min="0" data-f="neuraxial.plt" data-num value="${esc(n.plt)}"></label>
-      <label class="f">INR (need &lt;1.4)<input id="f-inr" class="num" type="number" inputmode="decimal" min="0" step="0.1" data-f="neuraxial.inr" data-num value="${esc(n.inr)}"></label>
-      <label class="f">PTT (need &lt;40)<input id="f-ptt" class="num" type="number" inputmode="decimal" min="0" step="0.1" data-f="neuraxial.ptt" data-num value="${esc(n.ptt)}"></label>
-      <label class="f">Labs drawn<input id="f-labdate" type="date" data-f="neuraxial.labDate" value="${esc(n.labDate)}"></label>
-    </div>
     <div id="ed-labs">${labsHTML(e)}</div>
-    <p class="hint">Check labs yourself, along with the last anticoagulant dose.</p>
+    <p class="hint">Need Plt &gt;100, INR &lt;1.4, PTT &lt;40. Enter labs under Pertinent history, and check them yourself along with the last anticoagulant dose.</p>
     <label class="f">Spine issues<input id="f-spine" type="text" data-f="neuraxial.spine" value="${esc(n.spine)}" placeholder="L4–5 fusion, scoliosis, stenosis…"></label>
   </div>`;
 }
@@ -2231,9 +2248,11 @@ document.addEventListener("click", ev => {
     }
     case "wf": { const k = b.dataset.w, s = b.dataset.s; e.wf[k] = { ...(e.wf[k] || {}) }; e.wf[k][s] = !e.wf[k][s]; break; }
     case "anes": {
-      e.anesPlan = e.anesPlan === b.dataset.v ? "" : b.dataset.v;
-      // A surgical block means full-strength blocks; GA (or spinal) + block means analgesic peripheral blocks.
-      const want = e.anesPlan === "surgical" ? "surgical" : (e.anesPlan === "ga" || e.anesPlan === "neuraxial") ? "analgesic" : null;
+      const k = b.dataset.v;
+      e.anes = e.anes.includes(k) ? e.anes.filter(x => x !== k) : [...e.anes, k];
+      // Block on its own = the block is the anesthetic (surgical strength). Block with GA or neuraxial = analgesic.
+      const s = new Set(e.anes), other = s.has("ga") || s.has("spinal") || s.has("cse") || s.has("epidural");
+      const want = s.has("block") && !other && !s.has("tbd") ? "surgical" : s.has("block") && other ? "analgesic" : null;
       if (want) e.blocks.forEach((x, j) => { if (x.type && !isNeur(x.type) && x.intent !== want) { x.intent = want; applySuggestion(e, j, false); } });
       const seg = editorEl.querySelector("#ed-anes"); if (seg) seg.innerHTML = anesSegHTML(e);
       rebuildBM(e); break;
@@ -2335,14 +2354,20 @@ function impPlan(planText, procSide) {
   const dm = /([a-z]+(?:\s+bupivacaine)?)\s*\(?\s*(\d*\.?\d+)\s*%/.exec(low);
   if (dm) { const d = DRUG_WORDS.find(([re]) => re.test(dm[1])); if (d) drug = { drug: d[1], pct: +dm[2] }; }
   if (!drug) { const d = DRUG_WORDS.find(([re]) => re.test(low)); if (d) drug = { drug: d[1], pct: null }; }
-  // Anesthetic plan from the wording: "vs GA" / "pending" → TBD; GA/GETA → GA + block; "surgical"/"block only"/MAC → surgical block.
+  // Anesthesia stack from the wording and the blocks found: "vs GA"/"pending" adds TBD; GA/GETA adds GA;
+  // any peripheral block adds Block; spinal / CSE / epidural blocks add those.
   const mentionsGA = /\bga\b|\bgeta\b|general anesth/.test(low);
-  const anes = mentionsGA && /\bvs\.?\b|\bor\s+ga\b|pending|\?/.test(low) ? "tbd"
-    : mentionsGA ? "ga"
-    : /surgical|block only|\bmac\b|sedation|primary anesthetic|anesthetic block/.test(low) ? "surgical"
-    : blocks.some(b => isNeur(b.type)) ? "neuraxial" : "";
+  const tbd = mentionsGA && /\bvs\.?\b|\bor\s+ga\b|pending|\?/.test(low);
+  const anes = [];
+  if (mentionsGA && !tbd) anes.push("ga");
+  if (blocks.some(b => !isNeur(b.type))) anes.push("block");
+  if (blocks.some(b => b.type === "Epidural")) anes.push("epidural");
+  if (blocks.some(b => b.type === "Spinal")) anes.push("spinal");
+  if (blocks.some(b => b.type === "Combined spinal-epidural")) anes.push("cse");
+  if (tbd) anes.push("tbd");
+  const blockOnly = anes.length === 1 && anes[0] === "block";
   return { blocks, drug, dex: /\bdex\b|decadron|dexameth/.test(low), epi: /\bepi\b|epinephrine/.test(low),
-    surgical: anes === "surgical", gaAlt: anes === "tbd", anes };
+    surgical: blockOnly && /surgical|block only|\bmac\b|sedation|primary anesthetic|anesthetic block/.test(low), gaAlt: tbd, anes };
 }
 // One patient's chunk of the email → a ready-to-add entry plus notes for the preview.
 function impPatient(chunk, date) {
@@ -2412,7 +2437,7 @@ function impPatient(chunk, date) {
   const notes = f.plan ? "Plan (from email): " + f.plan : "";
   const e = normalize({ date, time: t ? t.time : "", location: room, createdAt: new Date().toISOString(), indication: proc,
     age, ageUnit, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon, pmh, homeMeds,
-    neuraxial: { plt, inr, ptt, spine: "", labDate }, blocks: [], meds: [], imported: true, anesPlan: plan.anes });
+    neuraxial: { plt, inr, ptt, spine: "", labDate }, blocks: [], meds: [], imported: true, anes: plan.anes });
   plan.blocks.forEach(b => {
     const j = e.blocks.push({ ...b, intent: plan.surgical ? "surgical" : "analgesic" }) - 1;
     applySuggestion(e, j, true);
@@ -2446,7 +2471,7 @@ function impRender() {
       <dl class="cinfo">
         ${row("Block", (blocks || none("None recognized")) + (meds ? `<span class="sub">${esc(meds)}</span>` : ""))}
         ${row("Surgeon", e.surgeon ? `<b>${esc(e.surgeon)}</b>` : none("Not listed"))}
-        ${row("Anesthesia", e.anesPlan ? `<span class="chip anes anes-${e.anesPlan}">${anesLabel(e.anesPlan)}</span>` : none("Not stated"))}
+        ${row("Anesthesia", e.anes.length ? `<span class="chip anes ${anesClass(e)}">${esc(anesText(e))}</span>` : none("Not stated"))}
         ${row("Where", e.intraop ? "In the OR (verbal consent)" : "Block area")}
         ${row("Patient", [ageLabel(e), e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
         ${row("Allergies", e.allergies ? esc(e.allergies) : none("Not on file"))}

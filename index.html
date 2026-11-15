@@ -588,7 +588,7 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
     <section class="gsec" id="g-pvb" data-title="Paravertebrals">
       <h2>Paravertebrals</h2>
       <ul>
-        <li><b>Mick robotic MVR:</b> highest concentration possible, 3 levels: <span class="mono">T3, T5, T7</span>.</li>
+        <li><b>Mick robotic MVR:</b> highest concentration possible, usually <b>2 levels</b> (sometimes 3: <span class="mono">T3, T5, T7</span>).</li>
         <li>Bupivacaine + Decadron + epi.</li>
       </ul>
     </section>
@@ -761,7 +761,7 @@ const EPI_MCG = { 0: 0, 400000: 2.5, 200000: 5 };
 const BLOCK_GROUPS = {
   "Head & neck": ["Superficial cervical plexus"],
   "Upper extremity": ["Interscalene", "Superior trunk", "Supraclavicular", "Infraclavicular", "Axillary", "Suprascapular"],
-  "Truncal": ["Erector spinae (ESP)", "Paravertebral", "PECS I", "PECS II", "Serratus anterior", "External oblique intercostal (EOI)", "PIFB", "TAP", "Quadratus lumborum", "Rectus sheath", "Ilioinguinal"],
+  "Truncal": ["Erector spinae (ESP)", "Paravertebral", "Intercostal", "PECS I", "PECS II", "Serratus anterior", "External oblique intercostal (EOI)", "PIFB", "TAP", "Quadratus lumborum", "Rectus sheath", "Ilioinguinal"],
   "Lower extremity": ["Fascia iliaca", "Femoral", "PENG", "Lateral femoral cutaneous", "Obturator", "Adductor canal", "iPACK", "Genicular", "Popliteal sciatic", "Ankle", "Lumbar plexus"],
   "Perineal": ["Pudendal"],
   "Neuraxial": ["Spinal", "Epidural", "Combined spinal-epidural", "Intrathecal catheter", "Caudal"],
@@ -802,6 +802,10 @@ const PEDS_TABLE_EXTRA = [
 const EPI_PER_ML = 5;    // 1:200,000 = 5 mcg/mL = 100 mcg per 20 mL
 const DEX_PER_ML = 0.1;  // 1 mg per 10 mL
 const DEEP = ["Paravertebral", "Lumbar plexus"];
+// Blocks done at more than one level. Suggested adult volume is per level × number of levels.
+const MULTI_LEVEL = ["Erector spinae (ESP)", "Paravertebral", "Intercostal"];
+const PER_LEVEL_ML = { "Erector spinae (ESP)": 20, "Paravertebral": 5, "Intercostal": 4 };
+const levelsOf = b => Math.max(1, Math.min(10, Math.round(num(b && b.levels) || 1)));
 const ANTICOAG = [
   { k: "asa",         short: "Aspirin",        label: "Aspirin",                hold: "Alone: no added restriction. Caution if combined with other agents." },
   { k: "clopidogrel", short: "Plavix",         label: "Plavix (clopidogrel)",   hold: "Stop 5–7 days before." },
@@ -851,7 +855,7 @@ const SURGERY_RULES = [
   { re: /olecranon/, label: "Olecranon ORIF", blocks: [["Infraclavicular"]], note: "Infra vs supra. Prone for Dvo, so GETA. No need for T2 ICB for tourniquet pain since under GA." },
   { re: /elbow|humer|ricci/, label: "Elbow / humerus", blocks: [["Supraclavicular"]], note: "Ricci usually wants full paralysis even supine (blocks plus GETA)." },
   { re: /forearm|radius|ulna|wrist|hand\b|carpal|finger|thumb|trigger|dupuytren/, label: "Forearm / wrist / hand", blocks: [["Infraclavicular"]] },
-  { re: /\bmvr\b|mitral|mini[- ]?thoracotomy/, label: "Robotic MVR", blocks: [["Paravertebral", { side: "R", intent: "surgical" }]], note: "Highest concentration possible, 3 levels: T3, T5, T7. Bupivacaine + Decadron + epi." },
+  { re: /\bmvr\b|mitral|mini[- ]?thoracotomy/, label: "Robotic MVR", blocks: [["Paravertebral", { side: "R", intent: "surgical", levels: 2 }]], note: "Highest concentration possible, usually 2 levels. Bupivacaine + Decadron + epi." },
   { re: /sternotomy|cabg|\bavr\b|cardiac/, label: "Sternotomy", blocks: [["PIFB", { side: "Bilat" }]] },
   { re: /esophagectomy/, label: "Esophagectomy", blocks: [["Epidural"]], note: "Thoracic epidural. Dilaudid PCEA 4/3/10/22 (Dilaudid 10 mcg/mL only) plus a Dilaudid 500 mcg syringe." },
   { re: /single[- ]?port/, label: "Single-port thoracic", blocks: [["External oblique intercostal (EOI)"]] },
@@ -875,7 +879,8 @@ function rulePlan(e) {
   const t = String(e.indication || "").toLowerCase().trim(); if (!t) return null;
   const rule = SURGERY_RULES.find(r => r.re.test(t)); if (!rule) return null;
   const side = sideFromText(t);
-  const blocks = rule.blocks.map(([type, o = {}]) => ({ type, side: o.side || (NEURAX.includes(type) ? "" : side), catheter: !!o.catheter, intent: o.intent || "analgesic" }));
+  const blocks = rule.blocks.map(([type, o = {}]) => ({ type, side: o.side || (NEURAX.includes(type) ? "" : side), catheter: !!o.catheter, intent: o.intent || "analgesic",
+    levels: o.levels || 1, levelNames: o.levelNames || "" }));
   return { rule, blocks };
 }
 // Starting volume per side (mL) for adults. Peds use the guideline mL/kg (low end). Edit to match team practice.
@@ -898,7 +903,8 @@ function suggestVol(e, b) {
     if (b.type === "Caudal") return half(0.5 * w);
     return null;
   }
-  const a = ADULT_VOL[b.type];
+  if (PER_LEVEL_ML[b.type] && levelsOf(b) > 1) return PER_LEVEL_ML[b.type] * levelsOf(b) * bilat;
+  const a = ADULT_VOL[b.type] ?? PER_LEVEL_ML[b.type];
   return a == null ? null : a * bilat;
 }
 // Suggested drug + strength when a block is picked. Edit these to match team practice.
@@ -999,7 +1005,9 @@ function blockLabel(b) {
   const name = b.type === "Other" ? (b.custom || "Other block") : b.type;
   if (!name) return "";
   const side = b.side ? b.side + " " : "";
-  return side + name + (b.catheter ? " + catheter" : "") + (b.intent === "surgical" ? " · surgical" : "");
+  const n = levelsOf(b), names = String(b.levelNames || "").trim();
+  const lv = n > 1 ? ` · ${n} levels${names ? ` (${names})` : ""}` : names ? ` (${names})` : "";
+  return side + name + lv + (b.catheter ? " + catheter" : "") + (b.intent === "surgical" ? " · surgical" : "");
 }
 const IN_OR_STEPS = ["called", "inSpace"]; // already in the OR for an intraop request
 function taskDone(e, t) {
@@ -1692,6 +1700,10 @@ function blocksHTML(e) {
       <label class="f">Side<select id="f-b${i}-side" data-f="blocks.${i}.side">${opt("", isNeur(b.type) ? "Midline" : "–", b.side)}${opt("L", "Left", b.side)}${opt("R", "Right", b.side)}${opt("Bilat", "Bilateral", b.side)}</select></label>
       <label class="check" style="align-self:end;height:38px"><input id="f-b${i}-cath" type="checkbox" data-f="blocks.${i}.catheter"${b.catheter ? " checked" : ""}> Catheter</label>
     </div>
+    ${MULTI_LEVEL.includes(b.type) ? `<div class="row-grid">
+      <label class="f">Levels<select id="f-b${i}-levels" data-f="blocks.${i}.levels" data-num>${[1, 2, 3, 4, 5, 6].map(n => opt(n, n === 1 ? "1 level" : n + " levels", levelsOf(b))).join("")}</select></label>
+      <label class="f">Which levels<input id="f-b${i}-lnames" type="text" data-f="blocks.${i}.levelNames" value="${esc(b.levelNames || "")}" placeholder="e.g. T3, T5, T7"></label>
+    </div>` : ""}
     <div class="seg" role="group" aria-label="Block intent" style="justify-self:start">${["analgesic", "surgical"].map(v => `<button type="button" data-act="intent" data-i="${i}" data-v="${v}" aria-pressed="${(b.intent || "analgesic") === v}">${v === "analgesic" ? "Analgesic" : "Surgical"}</button>`).join("")}</div>
     <div class="bmeds">
       <div class="bmeds-h">Medication for this block</div>
@@ -1836,8 +1848,9 @@ function onField(ev) {
   setPath(e, f, v);
   if (/^meds\.\d+\.(drug|pct)$/.test(f)) e.meds[+f.split(".")[1]].auto = false;
   if (/^meds\.\d+\.ml$/.test(f)) e.meds[+f.split(".")[1]].autoMl = false;
+  if (/^blocks\.\d+\.type$/.test(f) && !MULTI_LEVEL.includes(v)) { const bb = e.blocks[+f.split(".")[1]]; bb.levels = 1; bb.levelNames = ""; }
   if (/^blocks\.\d+\.type$/.test(f) && v) applySuggestion(e, +f.split(".")[1], true);
-  const resuggest = f === "age" || f === "weightKg" || /^blocks\.\d+\.side$/.test(f);
+  const resuggest = f === "age" || f === "weightKg" || /^blocks\.\d+\.(side|levels)$/.test(f);
   if (resuggest) e.blocks.forEach((_, j) => applySuggestion(e, j, false));
   if (/^meds\.\d+\.drug$/.test(f)) { const i = +f.split(".")[1]; e.meds[i].pct = LA[v].def; if (v === "lipo") e.meds[i].epi = 0; rebuildBM(e); }
   if (/^blocks\.\d+\.type$/.test(f)) {
@@ -1937,7 +1950,7 @@ function learnFrom(e, phrase) {
   const side = sideFromText(String(e.indication).toLowerCase());
   const idx = {}; used.forEach((x, n) => idx[x.i] = n);
   const blocks = used.map(({ b }) => ({ type: b.type, custom: b.custom || "", catheter: !!b.catheter, intent: b.intent || "analgesic",
-    side: side && side !== "Bilat" && b.side === side ? "same" : (b.side || "") }));
+    side: side && side !== "Bilat" && b.side === side ? "same" : (b.side || ""), levels: levelsOf(b), levelNames: b.levelNames || "" }));
   const w = num(e.weightKg);
   const meds = e.meds.filter(m => LA[m.drug]).map(m => ({ block: idx[m.block] ?? "", drug: m.drug, pct: num(m.pct), ml: num(m.ml) || "",
     mlPerKg: w && num(m.ml) ? Math.round(num(m.ml) / w * 1000) / 1000 : null, epi: num(m.epi) > 0 ? 200000 : 0, dexOn: !!m.dexOn }));
@@ -2010,7 +2023,8 @@ function applyPlan(e, src, picks) {
     const s = learnedSummary(e, L.p), w = num(e.weightKg);
     s.blocks.forEach((b, k) => {
       if (!want(k) || hasBlockType(e, b.type)) return;
-      const j = e.blocks.push({ type: b.type, custom: b.custom || "", side: b.side || "", catheter: !!b.catheter, intent: b.intent || "analgesic" }) - 1;
+      const j = e.blocks.push({ type: b.type, custom: b.custom || "", side: b.side || "", catheter: !!b.catheter, intent: b.intent || "analgesic",
+        levels: levelsOf(b), levelNames: b.levelNames || "" }) - 1;
       L.p.meds.filter(m => m.block === k).forEach(m => e.meds.push({ drug: m.drug, pct: m.pct, epi: m.epi || 0, dexOn: !!m.dexOn, block: j,
         ml: isPeds(e) && m.mlPerKg && w ? half(m.mlPerKg * w) : m.ml, auto: false, autoMl: false }));
     });

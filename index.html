@@ -437,6 +437,9 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
   .cchk { padding: 7px; } .cchk-t { display: none; }
 }
 /* Pre-op consent reminders (end-of-case blocks) */
+.endconsent { display: grid; gap: 6px; margin-top: 8px; }
+.endconsent .seg { justify-self: start; }
+.endline .c-ok { color: var(--ok); } .endline .c-need { color: var(--warn); }
 .rcard { border: 1.5px dashed var(--warn); background: var(--warn-soft); border-radius: var(--r); padding: 9px 12px; display: grid; gap: 4px; }
 .rtitle { font-size: .9rem; }
 .rtitle b { color: var(--warn); }
@@ -1586,7 +1589,8 @@ function renderTimeline() {
     const nl = compact ? nowLineC : nowLine;
     // Patients plus pre-op consent reminders for end-of-case blocks, in time order.
     const items = list.map(e => ({ e, time: e.time || "99:99", kind: "block" }));
-    list.forEach(e => { const r = preopRemind(e); if (r) items.push({ e, time: r.at, kind: "remind", r }); });
+    // A consented patient's reminder comes off the timeline; consent then just shows as ticked in their checklist.
+    list.forEach(e => { const r = preopRemind(e); if (r && !r.done) items.push({ e, time: r.at, kind: "remind", r }); });
     items.sort((a, b) => a.time.localeCompare(b.time) || (a.kind === "remind" ? -1 : 1));
     items.forEach(it => {
       if (!nowPlaced && it.time !== "99:99" && it.time > now) { html += nl(now); nowPlaced = true; }
@@ -1798,6 +1802,7 @@ function timingHTML(e) {
       </div>
       ${e.caseStartedAt ? `<button type="button" class="linkbtn" style="justify-self:start" data-act="case-clear">Clear case start</button>` : `<button type="button" class="planbtn" data-act="case-start">Case started now</button>`}
       <div id="ed-endsum">${endSumHTML(e)}</div>
+      <div id="ed-endconsent">${endConsentHTML(e)}</div>
     </div>`;
 }
 function endSumHTML(e) {
@@ -1806,10 +1811,20 @@ function endSumHTML(e) {
   return `<div class="planbox"><div class="src">Estimated block time</div><div class="plan-b">~${c.block}</div>
     <div class="plan-n">Half of ${c.mins} min after ${c.started ? `the case started at ${c.start}` : `the scheduled start at ${c.start} (case not started yet)`}. Case expected to end around ${c.end}.</div></div>`;
 }
+// Consent switch inside the End-of-case box. Same consent step as the checklist ("Obtained" / "Not obtained").
+function endConsentHTML(e) {
+  if (e.timing !== "end") return "";
+  const v = e.tasks.consent;
+  const btn = (val, label, cls = "") => `<button type="button" class="${cls}" data-act="task" data-k="consent" data-v="${val}" aria-pressed="${v === val}">${label}</button>`;
+  return `<div class="endconsent"><span class="bmeds-h">Consent (patient is asleep at the end, so consent before surgery)</span>
+    <div class="seg">${btn("yes", "Consented")}${btn("no", "Not consented", "nob")}</div>
+    <span class="hint">${v === "yes" ? "Consented: the pre-op reminder is off the timeline." : "Until consented, a “Consent before surgery” reminder shows on the timeline 1 h before the case start."}</span></div>`;
+}
 function endLineHTML(e) {
   const c = endCaseCalc(e); if (!c) return "";
   if (!c.ready) return `<div class="endline">End of case · add start time and OR time</div>`;
-  return `<div class="endline"><span>End of case · ${c.started ? `started ${c.start}` : `scheduled ${c.start}, not started`} · OR ~${c.mins} min · ends ~${c.end}</span>${!c.started && e.status === "active" ? `<button type="button" class="linkbtn" data-act="case-start">Case started</button>` : ""}</div>`;
+  const consented = e.tasks.consent === "yes";
+  return `<div class="endline"><span>End of case · ${c.started ? `started ${c.start}` : `scheduled ${c.start}, not started`} · OR ~${c.mins} min · ends ~${c.end} · <b class="${consented ? "c-ok" : "c-need"}">${consented ? "✓ consented" : "needs consent before surgery"}</b></span>${!c.started && e.status === "active" ? `<button type="button" class="linkbtn" data-act="case-start">Case started</button>` : ""}</div>`;
 }
 const editedHTML = e => e.updatedBy && e.updatedAt ? `Last edited by ${esc(e.updatedBy)} at ${hhmm(e.updatedAt)}` : "";
 function refreshTiming(e) {
@@ -2012,6 +2027,7 @@ function refreshDerived(e) {
   const set = (sel, html) => { const n = editorEl.querySelector(sel); if (n) n.innerHTML = html; };
   set("#ed-title", esc(oneLiner(e)));
   set("#ed-edited", editedHTML(e));
+  set("#ed-endconsent", endConsentHTML(e));
   set("#ed-prog", progressHTML(e));
   set("#ed-status", statusBtns(e));
   set("#ed-asra", asraHTML(e));

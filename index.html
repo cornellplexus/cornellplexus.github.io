@@ -309,6 +309,19 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
   .gnav { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
   .gnav button { white-space: nowrap; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; }
 }
+/* Import tab */
+.importer { max-width: 820px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 48px; display: grid; gap: 14px; }
+.imp-in { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 10px; }
+.imp-in h2 { margin: 0; font: 700 1.2rem var(--f-display); }
+.imp-in textarea { width: 100%; min-height: 180px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); padding: 10px; font: .86rem/1.5 var(--f-mono); resize: vertical; }
+.imp-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.imp-actions .f { max-width: 180px; }
+.imp-out { display: grid; gap: 12px; }
+.impcard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+.impcard.dup { opacity: .7; }
+.imp-head { display: flex; gap: 10px; align-items: flex-start; font-size: 1rem; cursor: pointer; }
+.imp-head input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--accent); flex: none; }
+.impwarn { margin: 0; padding: 8px 10px 8px 26px; border-radius: 8px; background: var(--warn-soft); color: var(--ink); font-size: .8rem; display: grid; gap: 3px; }
 .savebox { border: 1px dashed var(--accent); border-radius: 9px; padding: 10px 12px; display: grid; gap: 6px; }
 .savebox .src { font-size: .66rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
 .saverow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
@@ -424,7 +437,7 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .crow dd { margin: 0; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-width: 0; }
 .crow .none { color: var(--muted); font-size: .84rem; padding-top: 1px; }
 .crow .sub { flex-basis: 100%; font-size: .78rem; color: var(--muted); }
-.crow .note { flex-basis: 100%; font-size: .84rem; overflow-wrap: anywhere; }
+.crow .note { flex-basis: 100%; font-size: .84rem; overflow-wrap: anywhere; white-space: pre-line; }
 .chip.okc { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }
 @media (max-width: 520px) {
   .crow { grid-template-columns: minmax(0, 1fr); gap: 4px; } .crow dt { padding-top: 0; }
@@ -466,7 +479,7 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 <header class="top">
   <div class="top-in">
     <div class="brand"><h1>Block Board</h1><span class="sync" id="sync">Connecting</span><span class="whoami" id="whoami" hidden></span><button type="button" class="signout" id="signout" hidden>Sign out</button></div>
-    <nav class="tabs" aria-label="Views"><a href="#board" class="tab" id="tab-board">Board</a><a href="#guide" class="tab" id="tab-guide">Guide</a></nav>
+    <nav class="tabs" aria-label="Views"><a href="#board" class="tab" id="tab-board">Board</a><a href="#guide" class="tab" id="tab-guide">Guide</a><a href="#import" class="tab" id="tab-import">Import</a></nav>
     <div class="datenav board-only">
       <button class="icon" id="prev" aria-label="Previous day">‹</button>
       <span class="dayname" id="dayname"></span>
@@ -482,6 +495,20 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 <main class="layout" id="board">
   <section aria-label="Timeline"><div class="viewbar"><div class="seg" role="group" aria-label="Timeline view"><button type="button" data-view="compact" aria-pressed="false">Schedule</button><button type="button" data-view="detail" aria-pressed="true">Detailed</button></div></div><ol class="timeline" id="timeline"><li class="empty"><h2>Loading the day</h2><p>Fetching blocks for this date.</p></li></ol></section>
   <aside class="editor" id="editor" aria-label="Block details"></aside>
+</main>
+
+<main class="importer" id="import" hidden>
+  <section class="imp-in">
+    <h2>Import from the block email</h2>
+    <p class="hint">Paste the whole email. Each patient (each "Procedure:") becomes its own entry. Check the preview, then add them to the timeline. Anything "not on file" is left blank for you to fill in.</p>
+    <label class="f">Email text<textarea id="imp-text" rows="10" placeholder="Procedure: Left proximal humerus ORIF  Room/Time: G1 8:30AM&#10;Location of Block: OR&#10;Surgeon: …&#10;Weight: …&#10;Allergies: …&#10;AC: …&#10;Labs: …&#10;Plan: Left interscalene +T2 (bupi 0.5% + dex)"></textarea></label>
+    <div class="imp-actions">
+      <label class="f">Add to date<input id="imp-date" type="date"></label>
+      <button type="button" class="primary" id="imp-read">Read email</button>
+      <button type="button" class="ghost" id="imp-clear">Clear</button>
+    </div>
+  </section>
+  <section class="imp-out" id="imp-out" aria-live="polite"></section>
 </main>
 
 <main class="guide" id="guide" hidden>
@@ -760,7 +787,7 @@ const EPI = { 0: "None", 400000: "2.5 mcg/mL", 200000: "5 mcg/mL" };
 const EPI_MCG = { 0: 0, 400000: 2.5, 200000: 5 };
 const BLOCK_GROUPS = {
   "Head & neck": ["Superficial cervical plexus"],
-  "Upper extremity": ["Interscalene", "Superior trunk", "Supraclavicular", "Infraclavicular", "Axillary", "Suprascapular"],
+  "Upper extremity": ["Interscalene", "Superior trunk", "Supraclavicular", "Infraclavicular", "Axillary", "Suprascapular", "Intercostobrachial (T2)"],
   "Truncal": ["Erector spinae (ESP)", "Paravertebral", "Intercostal", "PECS I", "PECS II", "Serratus anterior", "External oblique intercostal (EOI)", "PIFB", "TAP", "Quadratus lumborum", "Rectus sheath", "Ilioinguinal"],
   "Lower extremity": ["Fascia iliaca", "Femoral", "PENG", "Lateral femoral cutaneous", "Obturator", "Adductor canal", "iPACK", "Genicular", "Popliteal sciatic", "Ankle", "Lumbar plexus"],
   "Perineal": ["Pudendal"],
@@ -890,6 +917,7 @@ const ADULT_VOL = {
   "TAP": 20, "Quadratus lumborum": 25, "Rectus sheath": 10, "Ilioinguinal": 10,
   "Fascia iliaca": 30, "Femoral": 20, "PENG": 20, "Lateral femoral cutaneous": 5, "Obturator": 10, "Adductor canal": 15, "iPACK": 15, "Genicular": 15,
   "Popliteal sciatic": 20, "Ankle": 20, "Lumbar plexus": 25, "Pudendal": 10, "Spinal": 1.6, "Combined spinal-epidural": 1.6,
+  "Intercostobrachial (T2)": 5,
 };
 const half = x => Math.round(x * 2) / 2;
 function suggestVol(e, b) {
@@ -2158,15 +2186,206 @@ $("#add-or").onclick = () => addEntry(true);
 document.addEventListener("keydown", ev => { if (ev.key === "Escape" && state.selected && isSheet()) closeEditor(); });
 setInterval(() => { if (state.loaded && state.date === dateKey(new Date())) renderTimeline(); }, 60000);
 
+/* ---------- import from the block email ---------- */
+// Field labels the email uses. Name / MRN / DOB are recognized only so they can be dropped: never imported.
+const IMP_LABEL_RE = /(?:^|[\s,;|•])(procedure|room\s*\/\s*time|room|time|location of block|block location|surgeon|weight|wt|height|age|sex|pmh\s*\/\s*psh|pmh|psh|meds|medications|allergies|ac|anticoagulation|anticoagulants|labs|plan|name|patient|mrn|dob|date of birth)\s*:/gi;
+const IMP_KEY = { "room/time": "roomtime", "location of block": "loc", "block location": "loc", wt: "weight", "pmh/psh": "pmh", psh: "pmh", medications: "meds",
+  anticoagulation: "ac", anticoagulants: "ac", name: "phi", patient: "phi", mrn: "phi", dob: "phi", "date of birth": "phi" };
+const blankish = v => /^(not on file|n\/?a|unknown|tbd|pending|[-–—]|)$/i.test(String(v || "").trim().replace(/\.$/, ""));
+// Plan text → block types. Order matters: specific names first; each match is masked so it isn't counted twice.
+const PLAN_BLOCKS = [
+  [/superficial cervical/g, "Superficial cervical plexus"], [/interscalene|\bisb\b/g, "Interscalene"], [/superior trunk/g, "Superior trunk"],
+  [/supraclav\w*|\bscb\b/g, "Supraclavicular"], [/infraclav\w*/g, "Infraclavicular"], [/axillary/g, "Axillary"], [/suprascap\w*/g, "Suprascapular"],
+  [/intercostobrach\w*|\bt2\b(?!\s*[-–]\s*t?\d)|\bicb\b/g, "Intercostobrachial (T2)"],
+  [/external oblique|\beoi\b/g, "External oblique intercostal (EOI)"], [/\bpifb\b|pecto-?intercostal|parasternal/g, "PIFB"],
+  [/erector spinae|\besp\b/g, "Erector spinae (ESP)"], [/paravertebral|\bpvb\b/g, "Paravertebral"], [/pecs\s*(?:ii|2)\b/g, "PECS II"], [/pecs\s*(?:i|1)?\b/g, "PECS I"],
+  [/serratus|\bsapb\b/g, "Serratus anterior"], [/\btap\b|transversus abdominis/g, "TAP"], [/quadratus lumborum|\bql\s*\d?\b/g, "Quadratus lumborum"],
+  [/rectus sheath/g, "Rectus sheath"], [/ilioinguinal|ilio-?inguinal/g, "Ilioinguinal"], [/intercostal/g, "Intercostal"],
+  [/fascia iliaca|\bfib\b|\bficb\b/g, "Fascia iliaca"], [/\bpeng\b/g, "PENG"], [/\blfcn\b|lateral femoral cutaneous/g, "Lateral femoral cutaneous"],
+  [/obturator/g, "Obturator"], [/adductor canal|adductor|\bacb\b|saphenous|\bsaph\b/g, "Adductor canal"], [/ipack/g, "iPACK"], [/genicular|genics/g, "Genicular"],
+  [/popliteal|\bpop\b|sciatic/g, "Popliteal sciatic"], [/ankle block/g, "Ankle"], [/lumbar plexus/g, "Lumbar plexus"], [/femoral/g, "Femoral"], [/pudendal/g, "Pudendal"],
+  [/\bcse\b|combined spinal/g, "Combined spinal-epidural"], [/intrathecal cath\w*/g, "Intrathecal catheter"], [/epidural/g, "Epidural"], [/\bspinal\b|\bsab\b/g, "Spinal"], [/caudal/g, "Caudal"],
+];
+const DRUG_WORDS = [[/bupi\w*|marcaine|sensorcaine/, "bupi"], [/ropi\w*|naropin/, "ropi"], [/lido\w*/, "lido"], [/mepi\w*/, "mepi"], [/chloro\w*|nesacaine/, "chloro"], [/exparel|liposomal/, "lipo"]];
+const AC_WORDS = [[/aspirin|\basa\b/, "asa"], [/plavix|clopidogrel/, "clopidogrel"], [/brilinta|ticagrelor/, "ticagrelor"], [/eliquis|apixaban/, "apixaban"],
+  [/xarelto|rivaroxaban/, "rivaroxaban"], [/warfarin|coumadin/, "warfarin"], [/lovenox|enoxaparin/, "lmwh"], [/heparin/, "hep"]];
+
+function impFields(chunk) {
+  const hits = []; let m; IMP_LABEL_RE.lastIndex = 0;
+  while ((m = IMP_LABEL_RE.exec(chunk))) hits.push({ key: m[1].toLowerCase().replace(/\s*\/\s*/, "/").replace(/\s+/g, " "), start: m.index, end: IMP_LABEL_RE.lastIndex });
+  const f = {};
+  hits.forEach((h, i) => {
+    const val = chunk.slice(h.end, i + 1 < hits.length ? hits[i + 1].start : chunk.length).replace(/\s+/g, " ").trim();
+    const k = IMP_KEY[h.key] || h.key;
+    f[k] = f[k] ? f[k] + "; " + val : val;
+  });
+  return f;
+}
+function impTime(s) {
+  const m = /\b(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)?|\b(\d{1,2})\s*(a\.?m\.?|p\.?m\.?)/i.exec(s || ""); if (!m) return null;
+  let h = +(m[1] || m[4]), min = +(m[2] || 0); const ap = (m[3] || m[5] || "").toLowerCase();
+  if (ap.startsWith("p") && h < 12) h += 12; if (ap.startsWith("a") && h === 12) h = 0;
+  if (!ap && h >= 1 && h <= 6) h += 12;          // "1:30" with no am/pm is an afternoon case
+  return { time: `${pad(h)}:${pad(min)}`, token: m[0] };
+}
+function impPlan(planText, procSide) {
+  const low = " " + String(planText || "").toLowerCase() + " ";
+  let masked = low; const found = [];
+  PLAN_BLOCKS.forEach(([re, type]) => {
+    re.lastIndex = 0; let m;
+    while ((m = re.exec(masked))) {
+      if (!found.some(x => x.type === type)) found.push({ type, idx: m.index, end: m.index + m[0].length });
+      masked = masked.slice(0, m.index) + " ".repeat(m[0].length) + masked.slice(m.index + m[0].length);
+    }
+  });
+  found.sort((a, b) => a.idx - b.idx);
+  const blocks = found.map(f => {
+    const before = low.slice(Math.max(0, f.idx - 30), f.idx), after = low.slice(f.end, f.end + 30);
+    const sm = [...before.matchAll(/\b(left|right|lt|rt|l|r|bilateral|bilat|b\/l)\b/g)].pop();
+    let side = sm ? ({ left: "L", lt: "L", l: "L", right: "R", rt: "R", r: "R" }[sm[1]] || "Bilat") : procSide;
+    if (isNeur(f.type)) side = "";
+    const lv = MULTI_LEVEL.includes(f.type) && /(\d)\s*-?\s*levels?|\bx\s*(\d)\b/.exec(after);
+    return { type: f.type, side, catheter: /cath/.test(after.split(/[+,;]| and /)[0]), intent: "analgesic", levels: lv ? +(lv[1] || lv[2]) : 1, levelNames: "" };
+  });
+  let drug = null;
+  const dm = /([a-z]+(?:\s+bupivacaine)?)\s*\(?\s*(\d*\.?\d+)\s*%/.exec(low);
+  if (dm) { const d = DRUG_WORDS.find(([re]) => re.test(dm[1])); if (d) drug = { drug: d[1], pct: +dm[2] }; }
+  if (!drug) { const d = DRUG_WORDS.find(([re]) => re.test(low)); if (d) drug = { drug: d[1], pct: null }; }
+  return { blocks, drug, dex: /\bdex\b|decadron|dexameth/.test(low), epi: /\bepi\b|epinephrine/.test(low),
+    surgical: /surgical|primary anesthetic|anesthetic block/.test(low), gaAlt: /\bvs\.?\s*ga\b|or ga\b|\bga\b/.test(low) };
+}
+// One patient's chunk of the email → a ready-to-add entry plus notes for the preview.
+function impPatient(chunk, date) {
+  const f = impFields(chunk), warn = [];
+  const proc = f.procedure || "";
+  const procSide = sideFromText(proc.toLowerCase());
+  const rt = f.roomtime || [f.room, f.time].filter(Boolean).join(" ");
+  const t = impTime(rt) || impTime(f.time);
+  const room = (f.room || (t ? rt.replace(t.token, "") : rt)).replace(/[@,;|]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) warn.push("No time found: set the block time after adding.");
+  // weight
+  let weightKg = "";
+  if (f.weight && !blankish(f.weight)) {
+    const w = /(\d+(?:\.\d+)?)\s*(kg|kgs|lbs?|pounds?)?/i.exec(f.weight);
+    if (w) { let n = +w[1]; const u = (w[2] || "").toLowerCase(); if (u.startsWith("l") || u.startsWith("p") || (!u && n > 180)) n = n / 2.2046; weightKg = Math.round(n * 10) / 10; }
+  }
+  if (!weightKg) warn.push("Weight not on file: max local anesthetic dose can't be calculated until it's entered.");
+  // age / sex (from Age:/Sex: fields or a "67F" / "67 yo F" anywhere)
+  let age = "", sex = "";
+  const as = /\b(\d{1,3})\s*(?:yo|y\/o|y\.o\.|yrs?|years?\s*old|y)?\s*-?\s*(m|f|male|female)\b/i.exec(chunk.replace(IMP_LABEL_RE, " "));
+  if (f.age && /\d/.test(f.age)) age = +/\d+/.exec(f.age)[0]; else if (as) age = +as[1];
+  if (f.sex && /^[mf]/i.test(f.sex)) sex = f.sex[0].toUpperCase(); else if (as) sex = as[2][0].toUpperCase();
+  // where the block happens
+  const loc = String(f.loc || "").toLowerCase();
+  const intraop = /\bor\b|operating|intra-?op/.test(loc) && !/pacu|block room|pre-?op|holding/.test(loc);
+  // blood thinners (AC field, plus anything in Meds)
+  const acText = [f.ac, f.meds].filter(v => v && !blankish(v)).join(" ").toLowerCase();
+  const anticoag = [];
+  AC_WORDS.forEach(([re, k]) => {
+    if (!re.test(acText)) return;
+    if (k === "lmwh") anticoag.push(/1\s*mg\/kg|\bbid\b|q12|therap|\btx\b/.test(acText) ? "lmwhtx" : "lmwhppx");
+    else if (k === "hep") anticoag.push(/drip|gtt|infusion|\biv\b/.test(acText) ? "hepiv" : "hepsq");
+    else anticoag.push(k);
+  });
+  const acMeaningful = f.ac && !blankish(f.ac) && !/^(none|no|denies|no ac)\b/i.test(f.ac);
+  if (acMeaningful && !anticoag.length) anticoag.push("other");
+  if (!f.ac || blankish(f.ac)) warn.push("Blood thinners not on file: confirm with the patient.");
+  // labs
+  const labs = String(f.labs || "");
+  const num1 = re => { const m = re.exec(labs); return m ? +m[1] : ""; };
+  let plt = num1(/(?:plt|platelets?)\s*[:=]?\s*(\d+(?:\.\d+)?)/i); if (plt > 1000) plt = Math.round(plt / 1000);
+  const inr = num1(/\binr\s*[:=]?\s*(\d+(?:\.\d+)?)/i), ptt = num1(/\ba?ptt\s*[:=]?\s*(\d+(?:\.\d+)?)/i);
+  // plan
+  const plan = impPlan(f.plan, procSide);
+  if (!plan.blocks.length) warn.push("No block recognized in the Plan: pick one after adding (the usual-plan suggestion will show).");
+  if (plan.gaAlt) warn.push("Plan mentions GA as an alternative: confirm with the surgeon/room.");
+  if (f.phi) warn.push("Name / MRN / DOB in the email were left out on purpose.");
+  const allergies = f.allergies && !blankish(f.allergies) ? f.allergies : "";
+  if (!allergies) warn.push("Allergies not on file.");
+  const notes = [
+    f.surgeon && !blankish(f.surgeon) && "Surgeon: " + f.surgeon,
+    f.pmh && !blankish(f.pmh) && "PMH/PSH: " + f.pmh,
+    f.meds && !blankish(f.meds) && "Meds: " + f.meds,
+    f.plan && "Plan (from email): " + f.plan,
+  ].filter(Boolean).join("\n");
+  const e = normalize({ date, time: t ? t.time : "", location: room, createdAt: new Date().toISOString(), indication: proc,
+    age, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes,
+    neuraxial: { plt, inr, ptt, spine: "" }, blocks: [], meds: [], imported: true });
+  plan.blocks.forEach(b => {
+    const j = e.blocks.push({ ...b, intent: plan.surgical ? "surgical" : "analgesic" }) - 1;
+    applySuggestion(e, j, true);
+  });
+  // The plan's drug/additives go on the peripheral blocks; a spinal keeps its own suggestion unless it's the only block.
+  const allNeur = e.blocks.length && e.blocks.every(b => isNeur(b.type));
+  const target = m => { const b = medRules(e, m).b; return allNeur || !(b && isNeur(b.type)); };
+  if (plan.drug) e.meds.filter(target).forEach(m => { m.drug = plan.drug.drug; m.pct = plan.drug.pct || LA[m.drug].def; m.auto = false; });
+  e.meds.filter(target).forEach(m => { if (plan.dex && medRules(e, m).dexOk) m.dexOn = true; if (plan.epi && !LA[m.drug].fixed) m.epi = 200000; });
+  return { e, warn, planText: f.plan || "", surgeon: f.surgeon || "" };
+}
+function impParse(text, date) {
+  const chunks = String(text || "").split(/(?=procedure\s*:)/i).filter(c => /procedure\s*:/i.test(c));
+  return chunks.map(c => impPatient(c, date));
+}
+function impRender() {
+  const out = $("#imp-out"), list = state.imp || [];
+  if (!list.length) { out.innerHTML = state.imp ? `<p class="hint">No "Procedure:" found. Paste the whole email, including each "Procedure:" line.</p>` : ""; return; }
+  const dateTxt = fromKey(state.impDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const row = (label, html) => `<div class="crow"><dt>${label}</dt><dd>${html}</dd></div>`;
+  const none = t => `<span class="none">${t}</span>`;
+  out.innerHTML = list.map((it, i) => {
+    const e = it.e;
+    const blocks = e.blocks.map(b => `<span class="chip block">${esc(blockLabel(b))}</span>`).join("");
+    const meds = e.meds.map(m => `${LA[m.drug].short} ${m.pct}%${m.ml ? " " + m.ml + " mL" : ""}${num(m.epi) ? " + epi" : ""}${m.dexOn ? " + dex" : ""}`).join(" · ");
+    const ac = e.anticoag.map(k => (ANTICOAG.find(a => a.k === k) || {}).short).filter(Boolean).join(", ");
+    const labs = ["plt", "inr", "ptt"].filter(k => e.neuraxial[k] !== "").map(k => `${k.toUpperCase()} ${e.neuraxial[k]}`).join(" · ");
+    return `<article class="impcard${it.dup ? " dup" : ""}">
+      <label class="imp-head"><input type="checkbox" data-imp="${i}"${it.dup ? "" : " checked"}>
+        <span><b class="mono">${esc(e.time || "--:--")}</b> ${e.location ? `<b>${esc(e.location)}</b> · ` : ""}${esc(e.indication || "No procedure")}${it.dup ? ` <em class="cflag">already on board</em>` : ""}</span></label>
+      <dl class="cinfo">
+        ${row("Block", (blocks || none("None recognized")) + (meds ? `<span class="sub">${esc(meds)}</span>` : ""))}
+        ${row("Where", e.intraop ? "In the OR (verbal consent)" : "Block area")}
+        ${row("Patient", [e.age !== "" ? e.age + "y" : "", e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
+        ${row("Allergies", e.allergies ? esc(e.allergies) : none("Not on file"))}
+        ${row("Blood thinners", ac ? esc(ac) + (e.anticoagNote ? `<span class="sub">${esc(e.anticoagNote)}</span>` : "") : none("None listed"))}
+        ${labs ? row("Labs", esc(labs)) : ""}
+        ${row("Notes", `<span class="note">${esc(e.notes).replace(/\n/g, "<br>")}</span>`)}
+      </dl>
+      ${it.warn.length ? `<ul class="impwarn">${it.warn.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
+    </article>`;
+  }).join("") + `<div class="imp-actions"><button type="button" class="primary" id="imp-add">Add checked to ${esc(dateTxt)}</button><span class="hint">You can edit anything after adding.</span></div>`;
+}
+$("#imp-read").addEventListener("click", () => {
+  state.impDate = $("#imp-date").value || state.date;
+  state.imp = impParse($("#imp-text").value, state.impDate);
+  if (state.impDate === state.date) // flag patients that are already on that day's board
+    state.imp.forEach(it => { it.dup = [...state.docs.values()].some(d => d.time === it.e.time && surgeryKey(d.indication) === surgeryKey(it.e.indication)); });
+  impRender();
+});
+$("#imp-clear").addEventListener("click", () => { $("#imp-text").value = ""; state.imp = null; impRender(); });
+$("#imp-out").addEventListener("click", ev => {
+  if (!ev.target.closest("#imp-add")) return;
+  if (!store) { toast("Still connecting. Try again in a moment."); return; }
+  const picked = [...$("#imp-out").querySelectorAll("input[data-imp]:checked")].map(x => state.imp[+x.dataset.imp]);
+  if (!picked.length) { toast("Tick at least one patient to add."); return; }
+  const date = state.impDate || state.date;
+  goDate(date);
+  picked.forEach(it => { const e = it.e; e.id = store.newId(); e.date = date; state.docs.set(e.id, e); touch(e.id, 0); });
+  state.loaded = true; state.imp = null; $("#imp-text").value = ""; impRender();
+  location.hash = "#board"; renderTimeline();
+  toast(`Added ${picked.length} patient${picked.length > 1 ? "s" : ""} to the timeline.`);
+});
+
 /* ---------- guide ---------- */
 const guideEl = $("#guide");
 function route() {
-  const g = location.hash === "#guide";
-  $("#board").hidden = g; guideEl.hidden = !g;
-  document.querySelectorAll(".board-only").forEach(n => n.hidden = g);
-  $("#tab-board").toggleAttribute("aria-current", !g); if (!g) $("#tab-board").setAttribute("aria-current", "page");
-  $("#tab-guide").toggleAttribute("aria-current", g); if (g) $("#tab-guide").setAttribute("aria-current", "page");
-  if (g && state.selected && isSheet()) closeEditor();
+  const view = location.hash === "#guide" ? "guide" : location.hash === "#import" ? "import" : "board";
+  $("#board").hidden = view !== "board"; guideEl.hidden = view !== "guide"; $("#import").hidden = view !== "import";
+  document.querySelectorAll(".board-only").forEach(n => n.hidden = view !== "board");
+  [["board", "#tab-board"], ["guide", "#tab-guide"], ["import", "#tab-import"]].forEach(([v, sel]) => {
+    const t = $(sel); if (v === view) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
+  });
+  if (view === "import" && !$("#imp-date").value) $("#imp-date").value = state.date;
+  if (view !== "board" && state.selected && isSheet()) closeEditor();
 }
 window.addEventListener("hashchange", route);
 (function buildGuide() {

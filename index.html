@@ -397,6 +397,7 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .cl1 { font-size: .9rem; }
 .cl1 b { font-family: var(--f-mono); font-weight: 600; }
 .cl2 { font-size: .8rem; color: var(--accent); font-weight: 500; }
+.csurg { color: var(--muted); font-weight: 500; }
 .cflag { font-style: normal; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--crit); margin-left: 4px; }
 .cflag.end { color: var(--accent); }
 .cright { display: grid; gap: 3px; justify-items: end; }
@@ -968,8 +969,13 @@ function normalize(d) {
     anticoag: [], anticoagNote: "", bleedRisk: false, bleedNote: "", infection: false, infectionNote: "", notes: "",
     blocks: [], neuraxial: {}, meds: [], doseWeight: "actual", tasks: {}, status: "active",
     source: "", neuroDeficit: false, neuroNote: "", wf: {}, intraopRequest: false, consentFrom: "", allergies: "",
-    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "",
+    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "",
   }, d);
+  // Older imported entries kept the surgeon as a "Surgeon: …" line in notes; move it into its own field.
+  if (!e.surgeon && typeof e.notes === "string") {
+    const sm = /^Surgeon:\s*(.+)$/m.exec(e.notes);
+    if (sm) { e.surgeon = sm[1].trim(); e.notes = e.notes.replace(/^Surgeon:.*(\n|$)/m, "").trim(); }
+  }
   e.neuraxial = Object.assign({ plt: "", inr: "", ptt: "", spine: "" }, e.neuraxial || {});
   e.wf = e.wf && typeof e.wf === "object" ? e.wf : {};
   e.tasks = e.tasks || {};
@@ -1439,6 +1445,7 @@ function cardInfoHTML(e) {
   const chip = (t, tone = "") => `<span class="chip ${tone}">${esc(t)}</span>`;
   const deep = hasDeepOrNeur(e);
   const rows = [];
+  if (e.surgeon) rows.push(row("Surgeon", `<b>${esc(e.surgeon)}</b>`));
   // Block
   const blocks = e.blocks.map(blockLabel).filter(Boolean);
   let sugg = "";
@@ -1543,7 +1550,7 @@ function compactHTML(e) {
   return `<li class="crow-s st-${st}${state.selected === e.id ? " selected" : ""}" data-id="${esc(e.id)}">
     <span class="ctime${e.timing === "end" ? " est" : ""}">${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}</span>
     <button type="button" class="cmain" data-act="open">
-      <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
+      <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
       <span class="cl2">${blocks ? esc(blocks) : "Block not chosen"}</span>
     </button>
     <span class="cright tip" tabindex="0" data-tip="${esc(waitTip(e))}">${right}</span>
@@ -1602,6 +1609,7 @@ function renderEditor() {
         <label class="f">Weight (kg)<input id="f-wt" class="num" type="number" inputmode="decimal" min="0" step="0.1" data-f="weightKg" data-num value="${esc(e.weightKg)}"></label>
         <label class="f">Height (cm)<input id="f-ht" class="num" type="number" inputmode="decimal" min="0" data-f="heightCm" data-num value="${esc(e.heightCm)}" placeholder="optional"></label>
         <label class="f wide">Here for<input id="f-ind" type="text" data-f="indication" value="${esc(e.indication)}" placeholder="hip fracture"></label>
+        <label class="f wide">Surgeon<input id="f-surgeon" type="text" data-f="surgeon" value="${esc(e.surgeon)}" placeholder="e.g. Ricci"></label>
       </div>
       <div id="ed-timing">${timingHTML(e)}</div>
       <div id="ed-plan" class="plans">${planBoxHTML(e)}</div>
@@ -2302,14 +2310,14 @@ function impPatient(chunk, date) {
   if (f.phi) warn.push("Name / MRN / DOB in the email were left out on purpose.");
   const allergies = f.allergies && !blankish(f.allergies) ? f.allergies : "";
   if (!allergies) warn.push("Allergies not on file.");
+  const surgeon = f.surgeon && !blankish(f.surgeon) ? f.surgeon.replace(/^dr\.?\s+/i, "") : "";
   const notes = [
-    f.surgeon && !blankish(f.surgeon) && "Surgeon: " + f.surgeon,
     f.pmh && !blankish(f.pmh) && "PMH/PSH: " + f.pmh,
     f.meds && !blankish(f.meds) && "Meds: " + f.meds,
     f.plan && "Plan (from email): " + f.plan,
   ].filter(Boolean).join("\n");
   const e = normalize({ date, time: t ? t.time : "", location: room, createdAt: new Date().toISOString(), indication: proc,
-    age, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes,
+    age, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon,
     neuraxial: { plt, inr, ptt, spine: "" }, blocks: [], meds: [], imported: true });
   plan.blocks.forEach(b => {
     const j = e.blocks.push({ ...b, intent: plan.surgical ? "surgical" : "analgesic" }) - 1;
@@ -2343,6 +2351,7 @@ function impRender() {
         <span><b class="mono">${esc(e.time || "--:--")}</b> ${e.location ? `<b>${esc(e.location)}</b> · ` : ""}${esc(e.indication || "No procedure")}${it.dup ? ` <em class="cflag">already on board</em>` : ""}</span></label>
       <dl class="cinfo">
         ${row("Block", (blocks || none("None recognized")) + (meds ? `<span class="sub">${esc(meds)}</span>` : ""))}
+        ${row("Surgeon", e.surgeon ? `<b>${esc(e.surgeon)}</b>` : none("Not listed"))}
         ${row("Where", e.intraop ? "In the OR (verbal consent)" : "Block area")}
         ${row("Patient", [e.age !== "" ? e.age + "y" : "", e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
         ${row("Allergies", e.allergies ? esc(e.allergies) : none("Not on file"))}

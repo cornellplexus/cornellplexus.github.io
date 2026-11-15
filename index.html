@@ -398,6 +398,8 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .cl1 b { font-family: var(--f-mono); font-weight: 600; }
 .cl2 { font-size: .8rem; color: var(--accent); font-weight: 500; }
 .csurg { color: var(--muted); font-weight: 500; }
+.agerow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
+.agerow select { width: auto; padding: 0 4px; }
 .cflag { font-style: normal; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--crit); margin-left: 4px; }
 .cflag.end { color: var(--accent); }
 .cright { display: grid; gap: 3px; justify-items: end; }
@@ -969,7 +971,7 @@ function normalize(d) {
     anticoag: [], anticoagNote: "", bleedRisk: false, bleedNote: "", infection: false, infectionNote: "", notes: "",
     blocks: [], neuraxial: {}, meds: [], doseWeight: "actual", tasks: {}, status: "active",
     source: "", neuroDeficit: false, neuroNote: "", wf: {}, intraopRequest: false, consentFrom: "", allergies: "",
-    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "",
+    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y",
   }, d);
   // Older imported entries kept the surgeon as a "Surgeon: …" line in notes; move it into its own field.
   if (!e.surgeon && typeof e.notes === "string") {
@@ -999,7 +1001,9 @@ const isNeur = t => NEURAX.includes(t);
 const isDeep = t => DEEP.includes(t);
 const hasNeur = e => e.blocks.some(b => isNeur(b.type));
 const hasDeepOrNeur = e => e.blocks.some(b => isNeur(b.type) || isDeep(b.type));
-const ageOf = e => (e.age === "" || e.age == null) ? null : num(e.age);
+// Age in years for all dosing logic; ages entered in months are converted (6 mo → 0.5 y).
+const ageOf = e => (e.age === "" || e.age == null) ? null : e.ageUnit === "mo" ? num(e.age) / 12 : num(e.age);
+const ageLabel = e => (e.age === "" || e.age == null) ? "" : e.age + (e.ageUnit === "mo" ? "mo" : "y");
 const isPeds = e => { const a = ageOf(e); return a != null && a < 18; };
 function medRules(e, m) {
   const b = m.block !== "" && m.block != null ? e.blocks[m.block] : null;
@@ -1029,7 +1033,7 @@ function volHint(e, b) {
 
 function oneLiner(e) {
   let s = "";
-  if (e.age !== "" && e.age != null) s += e.age + "y";
+  s += ageLabel(e);
   if (e.sex) s += e.sex;
   if (e.weightKg) s += (s ? " " : "") + `(${e.weightKg}kg)`;
   if (e.indication) s += (s ? " here for " : "Here for ") + e.indication;
@@ -1543,7 +1547,7 @@ const nowLineC = t => `<li class="nowline-c" aria-label="Current time ${t}"><spa
 // One-line schedule row: time, age/sex, surgery, blocks, progress.
 function compactHTML(e) {
   const st = stateOf(e), p = progress(e);
-  const who = `${e.age !== "" && e.age != null ? e.age + "y" : ""}${e.sex || ""}` || "–";
+  const who = `${ageLabel(e)}${e.sex || ""}` || "–";
   const blocks = e.blocks.map(blockLabel).filter(Boolean).join(" + ");
   const right = st === "done" ? `<span class="pill done">Done</span>` : st === "cancelled" ? `<span class="pill cancelled">Cancelled</span>`
     : `<span class="cbar${st === "ready" ? " ok" : st === "issue" ? " bad" : ""}" role="progressbar" aria-label="Pre-block checklist" aria-valuemin="0" aria-valuemax="${p.total}" aria-valuenow="${p.done}"><i style="width:${(p.done / p.total) * 100}%"></i></span><span class="ccount">${st === "ready" ? "Ready" : p.done + "/" + p.total}</span>`;
@@ -1604,7 +1608,7 @@ function renderEditor() {
         <label class="f">Date<input id="f-date" type="date" data-f="date" value="${esc(e.date)}"></label>
         <label class="f">Bay / room<input id="f-loc" type="text" data-f="location" value="${esc(e.location)}" placeholder="Bay 4"></label>
         <label class="f">Coming from<select id="f-src" data-f="source">${SOURCES.map(v => opt(v, v || "–", e.source)).join("")}</select></label>
-        <label class="f">Age<input id="f-age" class="num" type="number" inputmode="numeric" min="0" max="120" data-f="age" data-num value="${esc(e.age)}"></label>
+        <label class="f">Age<span class="agerow"><input id="f-age" class="num" type="number" inputmode="numeric" min="0" max="120" data-f="age" data-num value="${esc(e.age)}"><select id="f-ageu" data-f="ageUnit" aria-label="Age in years or months">${opt("y", "yrs", e.ageUnit)}${opt("mo", "mos", e.ageUnit)}</select></span></label>
         <label class="f">Sex<select id="f-sex" data-f="sex">${opt("", "–", e.sex)}${opt("F", "F", e.sex)}${opt("M", "M", e.sex)}</select></label>
         <label class="f">Weight (kg)<input id="f-wt" class="num" type="number" inputmode="decimal" min="0" step="0.1" data-f="weightKg" data-num value="${esc(e.weightKg)}"></label>
         <label class="f">Height (cm)<input id="f-ht" class="num" type="number" inputmode="decimal" min="0" data-f="heightCm" data-num value="${esc(e.heightCm)}" placeholder="optional"></label>
@@ -1886,7 +1890,7 @@ function onField(ev) {
   if (/^meds\.\d+\.ml$/.test(f)) e.meds[+f.split(".")[1]].autoMl = false;
   if (/^blocks\.\d+\.type$/.test(f) && !MULTI_LEVEL.includes(v)) { const bb = e.blocks[+f.split(".")[1]]; bb.levels = 1; bb.levelNames = ""; }
   if (/^blocks\.\d+\.type$/.test(f) && v) applySuggestion(e, +f.split(".")[1], true);
-  const resuggest = f === "age" || f === "weightKg" || /^blocks\.\d+\.(side|levels)$/.test(f);
+  const resuggest = f === "age" || f === "ageUnit" || f === "weightKg" || /^blocks\.\d+\.(side|levels)$/.test(f);
   if (resuggest) e.blocks.forEach((_, j) => applySuggestion(e, j, false));
   if (/^meds\.\d+\.drug$/.test(f)) { const i = +f.split(".")[1]; e.meds[i].pct = LA[v].def; if (v === "lipo") e.meds[i].epi = 0; rebuildBM(e); }
   if (/^blocks\.\d+\.type$/.test(f)) {
@@ -2279,10 +2283,17 @@ function impPatient(chunk, date) {
   }
   if (!weightKg) warn.push("Weight not on file: max local anesthetic dose can't be calculated until it's entered.");
   // age / sex (from Age:/Sex: fields or a "67F" / "67 yo F" anywhere)
-  let age = "", sex = "";
-  const as = /\b(\d{1,3})\s*(?:yo|y\/o|y\.o\.|yrs?|years?\s*old|y)?\s*-?\s*(m|f|male|female)\b/i.exec(chunk.replace(IMP_LABEL_RE, " "));
-  if (f.age && /\d/.test(f.age)) age = +/\d+/.exec(f.age)[0]; else if (as) age = +as[1];
-  if (f.sex && /^[mf]/i.test(f.sex)) sex = f.sex[0].toUpperCase(); else if (as) sex = as[2][0].toUpperCase();
+  let age = "", sex = "", ageUnit = "y";
+  const as = /\b(\d{1,3})\s*(mos?|months?\s*old|months?|m\/o|wks?|weeks?\s*old|weeks?|yo|y\/o|y\.o\.|yrs?|years?\s*old|y)?\s*-?\s*(m|f|male|female)\b/i.exec(chunk.replace(IMP_LABEL_RE, " "));
+  const setAge = (n, unit) => {
+    unit = String(unit || "").toLowerCase();
+    if (/^(mo|month|m\/o)/.test(unit)) { age = n; ageUnit = "mo"; }
+    else if (/^w/.test(unit)) { age = Math.max(0, Math.round(n / 4.345 * 10) / 10); ageUnit = "mo"; }   // weeks → months
+    else age = n;
+  };
+  const fa = f.age && /(\d+(?:\.\d+)?)\s*([a-z\/]+)?/i.exec(f.age);
+  if (fa) setAge(+fa[1], fa[2]); else if (as) setAge(+as[1], as[2]);
+  if (f.sex && /^[mf]/i.test(f.sex)) sex = f.sex[0].toUpperCase(); else if (as) sex = as[3][0].toUpperCase();
   // where the block happens
   const loc = String(f.loc || "").toLowerCase();
   const intraop = /\bor\b|operating|intra-?op/.test(loc) && !/pacu|block room|pre-?op|holding/.test(loc);
@@ -2317,7 +2328,7 @@ function impPatient(chunk, date) {
     f.plan && "Plan (from email): " + f.plan,
   ].filter(Boolean).join("\n");
   const e = normalize({ date, time: t ? t.time : "", location: room, createdAt: new Date().toISOString(), indication: proc,
-    age, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon,
+    age, ageUnit, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon,
     neuraxial: { plt, inr, ptt, spine: "" }, blocks: [], meds: [], imported: true });
   plan.blocks.forEach(b => {
     const j = e.blocks.push({ ...b, intent: plan.surgical ? "surgical" : "analgesic" }) - 1;
@@ -2353,7 +2364,7 @@ function impRender() {
         ${row("Block", (blocks || none("None recognized")) + (meds ? `<span class="sub">${esc(meds)}</span>` : ""))}
         ${row("Surgeon", e.surgeon ? `<b>${esc(e.surgeon)}</b>` : none("Not listed"))}
         ${row("Where", e.intraop ? "In the OR (verbal consent)" : "Block area")}
-        ${row("Patient", [e.age !== "" ? e.age + "y" : "", e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
+        ${row("Patient", [ageLabel(e), e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
         ${row("Allergies", e.allergies ? esc(e.allergies) : none("Not on file"))}
         ${row("Blood thinners", ac ? esc(ac) + (e.anticoagNote ? `<span class="sub">${esc(e.anticoagNote)}</span>` : "") : none("None listed"))}
         ${labs ? row("Labs", esc(labs)) : ""}

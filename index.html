@@ -135,6 +135,8 @@ button { cursor: pointer; }
 .rx-name b { font-weight: 600; }
 .rx-pct { font: 600 .85rem var(--f-mono); color: var(--accent); }
 .rx-vol { font: 600 .8rem var(--f-mono); background: var(--accent-soft); color: var(--ink); padding: 1px 6px; border-radius: 5px; }
+.rx-split { font: 500 .74rem var(--f-mono); color: var(--muted); }
+.splitline { font: 600 .82rem var(--f-mono); color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 5px 8px; }
 .rx-add { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .tag { font-size: .72rem; line-height: 1.2; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
 .tag b { color: var(--ink); font-weight: 600; }
@@ -1022,8 +1024,9 @@ function volHint(e, b) {
   const w = num(e.weightKg), a = ageOf(e), f = x => fmtMg(Math.round(x * 10) / 10);
   if (isPeds(e)) {
     const v = PEDS_VOL[b.type];
-    if (v) { const [lo, hi, max, lbl] = v; return `Peds ${b.type}: ${lo === hi ? lo : lo + "–" + hi} mL/kg/side${w ? ` = ${f(Math.min(lo * w, max))}${hi !== lo ? "–" + f(Math.min(hi * w, max)) : ""} mL` : ""} (max ${lbl} mL/side)`; }
-    if (b.type === "Pudendal") { const [lo, hi, max] = a < 5 ? [0.3, 0.5, 5] : a <= 12 ? [0.3, 0.3, 10] : [0.1, 0.2, 15]; return `Peds pudendal: ${lo === hi ? lo : lo + "–" + hi} mL/kg${w ? ` = ${f(Math.min(lo * w, max))}${hi !== lo ? "–" + f(Math.min(hi * w, max)) : ""} mL` : ""} (max ${max} mL). Caution: sciatic block.`; }
+    const both = b.side === "Bilat" ? " Bilateral: double it for the syringe total." : "";
+    if (v) { const [lo, hi, max, lbl] = v; return `Peds ${b.type}: ${lo === hi ? lo : lo + "–" + hi} mL/kg per side${w ? ` = ${f(Math.min(lo * w, max))}${hi !== lo ? "–" + f(Math.min(hi * w, max)) : ""} mL per side` : ""} (max ${lbl} mL per side).${both}`; }
+    if (b.type === "Pudendal") { const [lo, hi, max] = a < 5 ? [0.3, 0.5, 5] : a <= 12 ? [0.3, 0.3, 10] : [0.1, 0.2, 15]; return `Peds pudendal: ${lo === hi ? lo : lo + "–" + hi} mL/kg per side${w ? ` = ${f(Math.min(lo * w, max))}${hi !== lo ? "–" + f(Math.min(hi * w, max)) : ""} mL per side` : ""} (max ${max} mL per side).${both} Caution: sciatic block.`; }
     if (b.type === "Caudal") return `Peds caudal: sacral 0.5, lumbar 1.0, low thoracic 1.25 mL/kg${w ? ` (${f(.5 * w)} / ${f(w)} / ${f(1.25 * w)} mL)` : ""}`;
     if (b.type === "Epidural" || b.type === "Combined spinal-epidural") return `Peds epidural load: thoracic ≤0.3, lumbar ≤0.5 mL/kg${w ? ` (${f(.3 * w)} / ${f(.5 * w)} mL)` : ""}. Test dose 0.1 mL/kg${w ? ` = ${f(Math.min(.1 * w, 3))} mL` : ""} (max 3 mL).`;
     if (b.type === "Genicular") return "Peds genicular: 1–2 mL per site (max 4–6 mL).";
@@ -1417,7 +1420,7 @@ function medsCardHTML(e) {
     const over = c.frac != null && c.frac > 1;
     const lb = medRules(e, m).b;
     return `<div class="rx">
-      <div><div class="rx-name"><b>${esc(c.d.name)}</b><span class="rx-pct">${c.pct}%</span>${c.ml ? `<span class="rx-vol">${fmtMg(c.ml)} mL</span>` : ""}</div>${lb && blockLabel(lb) ? `<div class="rx-for">for ${esc(blockLabel(lb))}</div>` : ""}${adds.length ? `<div class="rx-add">${adds.join("")}</div>` : ""}</div>
+      <div><div class="rx-name"><b>${esc(c.d.name)}</b><span class="rx-pct">${c.pct}%</span>${c.ml ? (() => { const sp = volSplit(lb, c.ml); return `<span class="rx-vol">${r1(c.ml)} mL${sp ? " total" : ""}</span>${sp ? `<span class="rx-split">${esc(sp.short)}</span>` : ""}`; })() : ""}</div>${lb && blockLabel(lb) ? `<div class="rx-for">for ${esc(blockLabel(lb))}</div>` : ""}${adds.length ? `<div class="rx-add">${adds.join("")}</div>` : ""}</div>
       <div class="rx-r">${c.ml ? `<span class="${over ? "over" : ""}">${fmtMg(c.mg)} mg</span>` : `<small>no volume</small>`}${c.max != null ? `<small>max ${c.maxMl ? fmtMg(c.maxMl) + " mL · " : ""}${fmtMg(c.max)} mg</small>` : ""}</div>
     </div>`;
   }).join("");
@@ -1796,7 +1799,7 @@ function medRowHTML(e, i, inBlock) {
       ${inBlock ? "" : `<label class="f">For block<select id="f-m${i}-block" data-f="meds.${i}.block" data-num>${opt("", "Choose block…", m.block)}${e.blocks.map((b, j) => opt(j, blockLabel(b) || `Block ${j + 1} (type not set)`, m.block)).join("")}</select></label>`}
       <div class="row-grid">
         <label class="f">Strength<select id="f-m${i}-pct" data-f="meds.${i}.pct" data-num>${pcts.map(p => opt(p, p + "%", m.pct)).join("")}</select></label>
-        <label class="f">Volume (mL)<input id="f-m${i}-ml" class="num" type="number" inputmode="decimal" min="0" step="0.5" data-f="meds.${i}.ml" data-num value="${esc(m.ml)}"></label>
+        <label class="f">Total volume (mL)<input id="f-m${i}-ml" class="num" type="number" inputmode="decimal" min="0" step="0.5" data-f="meds.${i}.ml" data-num value="${esc(m.ml)}"></label>
       </div>
       <div class="addrow" data-addons="${i}">${addonsHTML(e, i)}</div>
       <div class="calc" data-calc="${i}">${calcHTML(e, i)}</div>
@@ -1816,6 +1819,19 @@ function addonsHTML(e, i) {
   h += `<button type="button" class="addon" data-act="med-epi" data-i="${i}" aria-pressed="${on}">${on ? `✓ Epi ${ml ? fmtMg(ml * EPI_PER_ML) + " mcg" : "5 mcg/mL"}` : "+ Epinephrine"}</button>`;
   return h;
 }
+// Volumes are always the TOTAL in the syringe. This spells out how that total splits across sides and levels.
+const r1 = x => String(Math.round(x * 10) / 10);
+function volSplit(b, ml) {
+  ml = num(ml); if (!b || !ml) return null;
+  const sides = b.side === "Bilat" && !isNeur(b.type) ? 2 : 1;
+  const lv = MULTI_LEVEL.includes(b.type) ? levelsOf(b) : 1;
+  if (sides * lv < 2) return null;
+  const per = r1(ml / (sides * lv));
+  const unit = sides > 1 && lv > 1 ? "level per side" : sides > 1 ? "side" : "level";
+  const parts = [lv > 1 ? `${lv} levels` : "", sides > 1 ? "2 sides" : ""].filter(Boolean).join(" × ");
+  return { long: `${r1(ml)} mL total = ${per} mL per ${unit} (${parts})`, short: `${per} mL/${unit.replace("level per side", "level/side")}` };
+}
+const volText = (b, ml) => { if (ml === "" || ml == null) return ""; const sp = volSplit(b, ml); return sp ? `${r1(num(ml))} mL total (${sp.short})` : `${r1(num(ml))} mL`; };
 function calcHTML(e, i) {
   const { w } = doseWeight(e);
   const c = medCalc(e.meds[i], w, medRules(e, e.meds[i])); if (!c) return "";
@@ -1827,6 +1843,8 @@ function calcHTML(e, i) {
     ${stat("Planned", c.ml ? `${fmtMg(c.ml)} mL · ${fmtMg(c.mg)} mg` : "–", over ? "over" : "")}
     ${stat("Max dose", c.max != null ? `${c.maxMl ? fmtMg(c.maxMl) + " mL · " : ""}${fmtMg(c.max)} mg` : "–", "max")}
   </div>`;
+  const sp = volSplit(medRules(e, e.meds[i]).b, c.ml);
+  if (sp) s += `<div class="splitline">${esc(sp.long)}</div>`;
   if (pct != null) s += `<div class="mini ${tone(pct)}"><i style="width:${Math.min(100, pct)}%"></i></div>`;
   const notes = [];
   if (pct != null) notes.push(`${pct}% of max`);
@@ -2027,7 +2045,7 @@ function sameBlocks(e, blocks) {
   return a && a === blocks.map(b => b.type + (b.catheter ? "+c" : "")).sort().join("|");
 }
 const hasBlockType = (e, t) => e.blocks.some(x => x.type === t);
-const medShort = m => `${LA[m.drug] ? LA[m.drug].short : m.drug} ${m.pct}%${m.ml ? " " + m.ml + " mL" : ""}${m.epi ? " + epi" : ""}${m.dexOn ? " + dex" : ""}`;
+const medShort = (m, b) => `${LA[m.drug] ? LA[m.drug].short : m.drug} ${m.pct}%${m.ml ? " " + volText(b, m.ml) : ""}${m.epi ? " + epi" : ""}${m.dexOn ? " + dex" : ""}`;
 function pickList(e, src, blocks, medsFor) {
   let open = 0;
   const rows = blocks.map((b, k) => {
@@ -2046,12 +2064,12 @@ function planBoxHTML(e) {
   if (L) {
     const s = learnedSummary(e, L.p);
     h += `<div class="planbox"><div class="src">${L.p.saved ? "Your team's saved plan" : `Your team's usual plan · done ${L.p.count}×`} for “${esc(String(L.doc.key).replace(/^peds /, ""))}”</div>
-      ${pickList(e, "learned", s.blocks, k => L.p.meds.filter(m => m.block === k).map(medShort).join(" · "))}</div>`;
+      ${pickList(e, "learned", s.blocks, k => L.p.meds.filter(m => m.block === k).map(m => medShort(m, s.blocks[k])).join(" · "))}</div>`;
   }
   if (R && (!L || rulePlanSummary(R.blocks) !== learnedSummary(e, L.p).text)) {
     h += `<div class="planbox ${L ? "alt" : ""}"><div class="src">${L ? "Standard suggestion" : "Suggested"} for ${esc(R.rule.label)}</div>
       ${R.rule.note ? `<div class="plan-n">${esc(R.rule.note)}</div>` : ""}
-      ${R.blocks.length ? pickList(e, "rule", R.blocks, k => { const s = suggestFor(e, R.blocks[k]); const v = suggestVol(e, R.blocks[k]); return s ? `${LA[s.drug].short} ${s.pct}%${v != null ? " " + v + " mL" : ""}` : ""; }) : ""}</div>`;
+      ${R.blocks.length ? pickList(e, "rule", R.blocks, k => { const s = suggestFor(e, R.blocks[k]); const v = suggestVol(e, R.blocks[k]); return s ? `${LA[s.drug].short} ${s.pct}%${v != null ? " " + volText(R.blocks[k], v) : ""}` : ""; }) : ""}</div>`;
   } else if (R && R.rule.note) h += `<div class="plan-n">${esc(R.rule.note)}</div>`;
   return h;
 }
@@ -2358,7 +2376,7 @@ function impRender() {
   out.innerHTML = list.map((it, i) => {
     const e = it.e;
     const blocks = e.blocks.map(b => `<span class="chip block">${esc(blockLabel(b))}</span>`).join("");
-    const meds = e.meds.map(m => `${LA[m.drug].short} ${m.pct}%${m.ml ? " " + m.ml + " mL" : ""}${num(m.epi) ? " + epi" : ""}${m.dexOn ? " + dex" : ""}`).join(" · ");
+    const meds = e.meds.map(m => `${LA[m.drug].short} ${m.pct}%${m.ml ? " " + volText(medRules(e, m).b, m.ml) : ""}${num(m.epi) ? " + epi" : ""}${m.dexOn ? " + dex" : ""}`).join(" · ");
     const ac = e.anticoag.map(k => (ANTICOAG.find(a => a.k === k) || {}).short).filter(Boolean).join(", ");
     const labs = ["plt", "inr", "ptt"].filter(k => e.neuraxial[k] !== "").map(k => `${k.toUpperCase()} ${e.neuraxial[k]}`).join(" · ");
     return `<article class="impcard${it.dup ? " dup" : ""}">

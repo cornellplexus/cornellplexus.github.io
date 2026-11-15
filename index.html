@@ -1037,8 +1037,8 @@ function normalize(d) {
   e.wf = e.wf && typeof e.wf === "object" ? e.wf : {};
   e.tasks = e.tasks || {};
   if (e.tasks.marked === "no") e.tasks.marked = null;            // surgeon mark is now a single Done step
-  // Blocks done in the OR get verbal consent — except end-of-case blocks, where the patient is asleep and must be consented beforehand.
-  if (e.intraop && !e.intraopRequest && e.timing !== "end" && !e.tasks.consent) e.tasks.consent = "na";
+  // Blocks done in the OR don't need written consent (verbal). End-of-case patients give verbal consent before surgery via "Spoke to patient".
+  if (e.intraop && !e.intraopRequest && !e.tasks.consent) e.tasks.consent = "na";
   e.blocks = Array.isArray(e.blocks) ? e.blocks : [];
   e.blocks = Array.isArray(e.blocks) ? e.blocks : [];
   e.meds = (Array.isArray(e.meds) ? e.meds : []).map(m => {
@@ -1412,6 +1412,7 @@ function tasksHTML(e) {
     const v = e.tasks[t.k], done = taskDone(e, t), no = taskNo(e, t);
     let ctl = "", stamp = "", label = t.label;
     if (e.intraopRequest && t.k === "spoke") label = "Spoke to family about block";
+    else if (e.timing === "end" && t.k === "spoke") label = "Spoke to patient · verbal consent (before surgery)";
     if (e.intraopRequest && IN_OR_STEPS.includes(t.k)) {
       stamp = "<small>in OR</small>";
     } else if (e.intraopRequest && t.type === "consent") {
@@ -1617,25 +1618,24 @@ const ARRIVE_BEFORE_MIN = [90, 60];
 function preopRemind(e) {
   if (e.timing !== "end" || e.status !== "active") return null;
   const start = toMin(e.caseStart); if (start == null) return null;
-  const consent = TASKS.find(t => t.k === "consent");
   return { at: fromMin(start - ARRIVE_BEFORE_MIN[1]), from: fromMin(start - ARRIVE_BEFORE_MIN[0]), to: fromMin(start - ARRIVE_BEFORE_MIN[1]),
-    start: fromMin(start), done: taskDone(e, consent) };
+    start: fromMin(start), done: e.tasks.spoke === "yes" };
 }
 function remindHTML(e, r, compact) {
   const who = oneLiner(e), room = e.orRoom ? ` · ${/^or\b/i.test(e.orRoom) ? e.orRoom : "OR " + e.orRoom}` : "";
   const sub = `Case ${r.start}${room} · block at end ~${e.time || "?"} · patient in hospital ~${r.from}–${r.to}`;
   if (compact) return `<li class="crow-s remind-row${r.done ? " rdone" : ""}" data-id="${esc(e.id)}">
     <span class="ctime"><span>${r.at}</span><small class="where">pre-op</small></span>
-    <button type="button" class="cmain" data-act="open"><span class="cl1"><b>${r.done ? "✓ Consented" : "Consent before surgery"}</b> <span>${esc(who)}</span></span><span class="cl2">${esc(sub)}</span></button>
-    ${r.done ? "" : `<button type="button" class="cchk rbtn" data-act="consent-yes">✓ Consent</button>`}
+    <button type="button" class="cmain" data-act="open"><span class="cl1"><b>${r.done ? "✓ Verbal consent" : "Verbal consent before surgery"}</b> <span>${esc(who)}</span></span><span class="cl2">${esc(sub)}</span></button>
+    ${r.done ? "" : `<button type="button" class="cchk rbtn" data-act="consent-yes">✓ Spoke</button>`}
   </li>`;
   return `<li class="slot remind-slot${r.done ? " rdone" : ""}" data-id="${esc(e.id)}">
     <div class="time">${r.at}<small class="where">pre-op</small></div>
     <div class="rail"><span class="dot"></span></div>
     <div class="card-wrap"><div class="rcard">
-      <div class="rtitle"><b>${r.done ? "✓ Consented" : "Consent before surgery"}</b> · ${esc(who)}</div>
+      <div class="rtitle"><b>${r.done ? "✓ Verbal consent" : "Verbal consent before surgery"}</b> · ${esc(who)}</div>
       <div class="rsub">${esc(sub)}</div>
-      ${r.done ? "" : `<div class="rbtns"><button type="button" class="go" data-act="consent-yes">Consent obtained</button><button type="button" class="linkbtn" data-act="open">Open</button></div>`}
+      ${r.done ? "" : `<div class="rbtns"><button type="button" class="go" data-act="consent-yes">Spoke to patient · consented</button><button type="button" class="linkbtn" data-act="open">Open</button></div>`}
     </div></div>
   </li>`;
 }
@@ -1814,17 +1814,17 @@ function endSumHTML(e) {
 // Consent switch inside the End-of-case box. Same consent step as the checklist ("Obtained" / "Not obtained").
 function endConsentHTML(e) {
   if (e.timing !== "end") return "";
-  const v = e.tasks.consent;
-  const btn = (val, label, cls = "") => `<button type="button" class="${cls}" data-act="task" data-k="consent" data-v="${val}" aria-pressed="${v === val}">${label}</button>`;
-  return `<div class="endconsent"><span class="bmeds-h">Consent (patient is asleep at the end, so consent before surgery)</span>
-    <div class="seg">${btn("yes", "Consented")}${btn("no", "Not consented", "nob")}</div>
-    <span class="hint">${v === "yes" ? "Consented: the pre-op reminder is off the timeline." : "Until consented, a “Consent before surgery” reminder shows on the timeline 1 h before the case start."}</span></div>`;
+  const v = e.tasks.spoke;
+  const btn = (val, label, cls = "") => `<button type="button" class="${cls}" data-act="task" data-k="spoke" data-v="${val}" aria-pressed="${v === val}">${label}</button>`;
+  return `<div class="endconsent"><span class="bmeds-h">Verbal consent: spoke to patient before surgery (they're asleep at the end)</span>
+    <div class="seg">${btn("yes", "Yes")}${btn("no", "No", "nob")}</div>
+    <span class="hint">${v === "yes" ? "Done: the pre-op reminder is off the timeline." : "Until done, a “Verbal consent before surgery” reminder shows on the timeline 1 h before the case start."}</span></div>`;
 }
 function endLineHTML(e) {
   const c = endCaseCalc(e); if (!c) return "";
   if (!c.ready) return `<div class="endline">End of case · add start time and OR time</div>`;
-  const consented = e.tasks.consent === "yes";
-  return `<div class="endline"><span>End of case · ${c.started ? `started ${c.start}` : `scheduled ${c.start}, not started`} · OR ~${c.mins} min · ends ~${c.end} · <b class="${consented ? "c-ok" : "c-need"}">${consented ? "✓ consented" : "needs consent before surgery"}</b></span>${!c.started && e.status === "active" ? `<button type="button" class="linkbtn" data-act="case-start">Case started</button>` : ""}</div>`;
+  const consented = e.tasks.spoke === "yes";
+  return `<div class="endline"><span>End of case · ${c.started ? `started ${c.start}` : `scheduled ${c.start}, not started`} · OR ~${c.mins} min · ends ~${c.end} · <b class="${consented ? "c-ok" : "c-need"}">${consented ? "✓ verbal consent" : "needs verbal consent before surgery"}</b></span>${!c.started && e.status === "active" ? `<button type="button" class="linkbtn" data-act="case-start">Case started</button>` : ""}</div>`;
 }
 const editedHTML = e => e.updatedBy && e.updatedAt ? `Last edited by ${esc(e.updatedBy)} at ${hhmm(e.updatedAt)}` : "";
 function refreshTiming(e) {
@@ -2073,14 +2073,14 @@ function onField(ev) {
   if (/^blocks\.\d+\.(type|side|catheter)$/.test(f) || /^meds\.\d+\.block$/.test(f) || resuggest) rebuildBM(e);
   if (f === "blockLoc") { // OR ⇄ "Block done in the OR" (verbal consent)
     const wasOR = !!e.intraop; e.intraop = v === "OR";
-    if (e.intraop && !wasOR && !e.intraopRequest && e.timing !== "end" && !e.tasks.consent) e.tasks.consent = "na";
+    if (e.intraop && !wasOR && !e.intraopRequest && !e.tasks.consent) e.tasks.consent = "na";
     if (!e.intraop && wasOR) { if (e.tasks.consent === "na") e.tasks.consent = null; e.intraopRequest = false; }
     renderEditor();
   }
   if (f === "intraop") {
     e.blockLoc = v ? "OR" : (e.blockLoc === "OR" ? "" : e.blockLoc);
     { const bl = editorEl.querySelector("#f-bloc"); if (bl) bl.value = e.blockLoc; }
-    if (v && !e.intraopRequest && e.timing !== "end" && !e.tasks.consent) e.tasks.consent = "na";
+    if (v && !e.intraopRequest && !e.tasks.consent) e.tasks.consent = "na";
     if (!v && e.tasks.consent === "na") e.tasks.consent = null;
     if (!v && e.intraopRequest) { e.intraopRequest = false; editorEl.querySelector("#f-oreq").checked = false; editorEl.querySelector("#ed-cfrom").innerHTML = ""; } editorEl.querySelector("#ed-tasks").innerHTML = tasksHTML(e); }
   if (f === "intraopRequest") {
@@ -2302,7 +2302,7 @@ document.addEventListener("click", ev => {
       break;
     }
     case "done": e.status = "done"; e.doneAt = new Date().toISOString(); if (!e.example) learnFrom(e); break;
-    case "consent-yes": e.tasks.consent = "yes"; break;
+    case "consent-yes": e.tasks.spoke = "yes"; break;
     case "save-plan": {
       const phrase = (editorEl.querySelector("#f-learnkey") || {}).value || e.indication;
       if (!surgeryKey(phrase)) { toast("Type the surgery phrase to save this plan under, e.g. single port."); return; }
@@ -2325,8 +2325,6 @@ document.addEventListener("click", ev => {
         if (e.timing === "end" && !e.tasks[k]) e.tasks[k] = "na";
         if (e.timing !== "end" && e.tasks[k] === "na") e.tasks[k] = null;
       });
-      if (e.timing === "end" && e.tasks.consent === "na") e.tasks.consent = null;   // asleep at the end: consent beforehand
-      if (e.timing !== "end" && e.intraop && !e.tasks.consent) e.tasks.consent = "na";
       { const tk = editorEl.querySelector("#ed-tasks"); if (tk && state.selected === e.id) tk.innerHTML = tasksHTML(e); }
       recomputeTime(e); refreshTiming(e); break;
     case "case-start": e.caseStartedAt = nowHM(); recomputeTime(e); refreshTiming(e); break;

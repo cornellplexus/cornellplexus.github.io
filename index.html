@@ -400,6 +400,15 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .cl1 b { font-family: var(--f-mono); font-weight: 600; }
 .cl2 { font-size: .8rem; color: var(--accent); font-weight: 500; }
 .csurg { color: var(--muted); font-weight: 500; }
+/* Anesthetic plan tags */
+.chip.anes { font-weight: 700; border-color: transparent; }
+.anes-ga { background: var(--accent-soft); color: var(--accent); }
+.anes-surgical { background: var(--ok-soft); color: var(--ok); }
+.anes-neuraxial { background: var(--warn-soft); color: var(--warn); }
+.anes-tbd { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--line) !important; }
+.anes-tag { font-style: normal; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 5px; border-radius: 4px; margin-left: 4px; }
+.anesrow { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.labdate { font-size: .76rem; color: var(--muted); }
 .agerow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
 .agerow select { width: auto; padding: 0 4px; }
 .cflag { font-style: normal; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--crit); margin-left: 4px; }
@@ -973,7 +982,7 @@ function normalize(d) {
     anticoag: [], anticoagNote: "", bleedRisk: false, bleedNote: "", infection: false, infectionNote: "", notes: "",
     blocks: [], neuraxial: {}, meds: [], doseWeight: "actual", tasks: {}, status: "active",
     source: "", neuroDeficit: false, neuroNote: "", wf: {}, intraopRequest: false, consentFrom: "", allergies: "",
-    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y", pmh: "", homeMeds: "",
+    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y", pmh: "", homeMeds: "", anesPlan: "",
   }, d);
   // Older imported entries kept surgeon / PMH / meds as lines in notes; move each into its own field.
   [["surgeon", /^Surgeon:\s*(.+)$/m, /^Surgeon:.*(\n|$)/m], ["pmh", /^PMH\/PSH:\s*(.+)$/m, /^PMH\/PSH:.*(\n|$)/m], ["homeMeds", /^Meds:\s*(.+)$/m, /^Meds:.*(\n|$)/m]]
@@ -982,7 +991,7 @@ function normalize(d) {
       const m = find.exec(e.notes);
       if (m) { e[k] = m[1].trim(); e.notes = e.notes.replace(strip, "").trim(); }
     });
-  e.neuraxial = Object.assign({ plt: "", inr: "", ptt: "", spine: "" }, e.neuraxial || {});
+  e.neuraxial = Object.assign({ plt: "", inr: "", ptt: "", spine: "", labDate: "" }, e.neuraxial || {});
   e.wf = e.wf && typeof e.wf === "object" ? e.wf : {};
   e.tasks = e.tasks || {};
   if (e.tasks.marked === "no") e.tasks.marked = null;            // surgeon mark is now a single Done step
@@ -1446,7 +1455,8 @@ function wfHTML(e) {
 }
 function labsHTML(e) {
   const L = labStatus(e), item = (k, label, need) => L[k] == null ? `<span>${label}: not entered</span>` : `<span class="${L[k] ? "ok" : "bad"}">${label} ${L[k] ? "OK" : "out of range"} (${need})</span>`;
-  return `<div class="labs">${item("plt", "Plt", ">100")}${item("inr", "INR", "<1.4")}${item("ptt", "PTT", "<40")}</div>`;
+  const d = labDateText(e);
+  return `<div class="labs">${item("plt", "Plt", ">100")}${item("inr", "INR", "<1.4")}${item("ptt", "PTT", "<40")}<span>${d ? "Drawn " + esc(d) : "Lab date not entered"}</span></div>`;
 }
 function cardInfoHTML(e) {
   const row = (label, html) => `<div class="crow"><dt>${label}</dt><dd>${html}</dd></div>`;
@@ -1467,10 +1477,11 @@ function cardInfoHTML(e) {
     : none("No anticoagulant or antiplatelet medications")));
   // Labs
   const n = e.neuraxial, L = labStatus(e);
-  if (deep || [n.plt, n.inr, n.ptt].some(v => v !== "" && v != null)) {
+  if (deep || [n.plt, n.inr, n.ptt, n.labDate].some(v => v !== "" && v != null)) {
     const bad = e.blocks.some(b => EPIDURALISH.includes(b.type)) ? "crit" : "warn";
     const lab = (k, label, unit = "") => L[k] == null ? chip(`${label} –`, hasNeur(e) ? "warn" : "") : chip(`${label} ${n[k]}${unit}`, L[k] ? "okc" : bad);
-    rows.push(row("Labs", lab("plt", "Plt", "k") + lab("inr", "INR") + lab("ptt", "PTT")));
+    const d = labDateText(e);
+    rows.push(row("Labs", lab("plt", "Plt", "k") + lab("inr", "INR") + lab("ptt", "PTT") + `<span class="labdate">${d ? "Drawn " + esc(d) : "Date not entered"}</span>`));
   }
   // History
   const h = [];
@@ -1490,6 +1501,7 @@ function cardHTML(e) {
   const st = stateOf(e), p = progress(e);
   const pillTxt = { done: "Done", cancelled: "Cancelled", ready: "Ready", issue: "Check", pending: `${p.done}/${p.total}` }[st];
   const tags = [];
+  if (e.anesPlan) tags.push(`<span class="chip anes anes-${e.anesPlan}">${anesLabel(e.anesPlan)}</span>`);
   if (e.intraopRequest) tags.push(`<span class="chip crit">OR request</span>`);
   if (isPeds(e)) tags.push(`<span class="chip peds-chip">Peds</span>`);
   if (e.source) tags.push(`<span class="chip">From ${esc(e.source)}</span>`);
@@ -1561,7 +1573,7 @@ function compactHTML(e) {
   return `<li class="crow-s st-${st}${state.selected === e.id ? " selected" : ""}" data-id="${esc(e.id)}">
     <span class="ctime${e.timing === "end" ? " est" : ""}">${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}</span>
     <button type="button" class="cmain" data-act="open">
-      <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
+      <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.anesPlan ? ` <em class="anes-tag anes-${e.anesPlan}">${anesLabel(e.anesPlan)}</em>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
       <span class="cl2">${blocks ? esc(blocks) : "Block not chosen"}</span>
     </button>
     <span class="cright tip" tabindex="0" data-tip="${esc(waitTip(e))}">${right}</span>
@@ -1648,6 +1660,7 @@ function renderEditor() {
     </section>
 
     <section class="sec"><h3>Blocks and medication</h3>
+      <div class="anesrow"><span class="bmeds-h">Anesthetic plan</span><div class="seg" id="ed-anes" role="group" aria-label="Anesthetic plan">${anesSegHTML(e)}</div></div>
       <div id="ed-blocks" style="display:grid;gap:8px">${blocksHTML(e)}</div>
       <button class="add" data-act="add-block">+ Add block</button>
       <div id="ed-neur">${neurHTML(e)}</div>
@@ -1716,6 +1729,17 @@ function refreshTiming(e) {
   const t = editorEl.querySelector("#ed-timing"); if (t) t.innerHTML = timingHTML(e);
   const ti = editorEl.querySelector("#f-time"); if (ti) { ti.value = e.time; ti.disabled = e.timing === "end"; }
 }
+// "11/10 (2 days before)" for the labs-drawn date, relative to the block date.
+function labDateText(e) {
+  const ld = e.neuraxial && e.neuraxial.labDate; if (!ld) return "";
+  const days = Math.round((fromKey(e.date) - fromKey(ld)) / 86400000);
+  const md = `${+ld.slice(5, 7)}/${+ld.slice(8, 10)}`;
+  const rel = days === 0 ? "same day" : days === 1 ? "1 day before" : days > 1 ? `${days} days before` : "after the block date?";
+  return `${md} (${rel})`;
+}
+const ANES = [["ga", "GA + block"], ["surgical", "Surgical block"], ["neuraxial", "Spinal + block"], ["tbd", "Anesthesia TBD"]];
+const anesLabel = k => (ANES.find(a => a[0] === k) || [])[1] || "";
+const anesSegHTML = e => ANES.map(([k, l]) => `<button type="button" data-act="anes" data-v="${k}" aria-pressed="${e.anesPlan === k}">${l}</button>`).join("");
 function consentFromHTML(e) {
   if (!e.intraopRequest) return "";
   return `<label class="f">Phone consent from<input id="f-cfrom" type="text" data-f="consentFrom" value="${esc(e.consentFrom)}" placeholder="Relationship, e.g. daughter (HCP)"></label>`;
@@ -1776,6 +1800,7 @@ function neurHTML(e) {
       <label class="f">Plt ×10³ (need &gt;100)<input id="f-plt" class="num" type="number" inputmode="numeric" min="0" data-f="neuraxial.plt" data-num value="${esc(n.plt)}"></label>
       <label class="f">INR (need &lt;1.4)<input id="f-inr" class="num" type="number" inputmode="decimal" min="0" step="0.1" data-f="neuraxial.inr" data-num value="${esc(n.inr)}"></label>
       <label class="f">PTT (need &lt;40)<input id="f-ptt" class="num" type="number" inputmode="decimal" min="0" step="0.1" data-f="neuraxial.ptt" data-num value="${esc(n.ptt)}"></label>
+      <label class="f">Labs drawn<input id="f-labdate" type="date" data-f="neuraxial.labDate" value="${esc(n.labDate)}"></label>
     </div>
     <div id="ed-labs">${labsHTML(e)}</div>
     <p class="hint">Check labs yourself, along with the last anticoagulant dose.</p>
@@ -2190,6 +2215,14 @@ document.addEventListener("click", ev => {
       rebuildBM(e); break;
     }
     case "wf": { const k = b.dataset.w, s = b.dataset.s; e.wf[k] = { ...(e.wf[k] || {}) }; e.wf[k][s] = !e.wf[k][s]; break; }
+    case "anes": {
+      e.anesPlan = e.anesPlan === b.dataset.v ? "" : b.dataset.v;
+      // A surgical block means full-strength blocks; GA (or spinal) + block means analgesic peripheral blocks.
+      const want = e.anesPlan === "surgical" ? "surgical" : (e.anesPlan === "ga" || e.anesPlan === "neuraxial") ? "analgesic" : null;
+      if (want) e.blocks.forEach((x, j) => { if (x.type && !isNeur(x.type) && x.intent !== want) { x.intent = want; applySuggestion(e, j, false); } });
+      const seg = editorEl.querySelector("#ed-anes"); if (seg) seg.innerHTML = anesSegHTML(e);
+      rebuildBM(e); break;
+    }
     case "intent": { const j = +b.dataset.i; if (!e.blocks[j]) return; e.blocks[j].intent = b.dataset.v; applySuggestion(e, j);
       rebuildBM(e); break; }
     case "med-dex": { const m = e.meds[+b.dataset.i]; if (!m) return; m.dexOn = !m.dexOn; break; }
@@ -2287,8 +2320,14 @@ function impPlan(planText, procSide) {
   const dm = /([a-z]+(?:\s+bupivacaine)?)\s*\(?\s*(\d*\.?\d+)\s*%/.exec(low);
   if (dm) { const d = DRUG_WORDS.find(([re]) => re.test(dm[1])); if (d) drug = { drug: d[1], pct: +dm[2] }; }
   if (!drug) { const d = DRUG_WORDS.find(([re]) => re.test(low)); if (d) drug = { drug: d[1], pct: null }; }
+  // Anesthetic plan from the wording: "vs GA" / "pending" → TBD; GA/GETA → GA + block; "surgical"/"block only"/MAC → surgical block.
+  const mentionsGA = /\bga\b|\bgeta\b|general anesth/.test(low);
+  const anes = mentionsGA && /\bvs\.?\b|\bor\s+ga\b|pending|\?/.test(low) ? "tbd"
+    : mentionsGA ? "ga"
+    : /surgical|block only|\bmac\b|sedation|primary anesthetic|anesthetic block/.test(low) ? "surgical"
+    : blocks.some(b => isNeur(b.type)) ? "neuraxial" : "";
   return { blocks, drug, dex: /\bdex\b|decadron|dexameth/.test(low), epi: /\bepi\b|epinephrine/.test(low),
-    surgical: /surgical|primary anesthetic|anesthetic block/.test(low), gaAlt: /\bvs\.?\s*ga\b|or ga\b|\bga\b/.test(low) };
+    surgical: anes === "surgical", gaAlt: anes === "tbd", anes };
 }
 // One patient's chunk of the email → a ready-to-add entry plus notes for the preview.
 function impPatient(chunk, date) {
@@ -2338,6 +2377,13 @@ function impPatient(chunk, date) {
   const num1 = re => { const m = re.exec(labs); return m ? +m[1] : ""; };
   let plt = num1(/(?:plt|platelets?)\s*[:=]?\s*(\d+(?:\.\d+)?)/i); if (plt > 1000) plt = Math.round(plt / 1000);
   const inr = num1(/\binr\s*[:=]?\s*(\d+(?:\.\d+)?)/i), ptt = num1(/\ba?ptt\s*[:=]?\s*(\d+(?:\.\d+)?)/i);
+  // lab date, e.g. "(11/10)", "11/10/26", "on 11/10/2026"; a missing year means the year of the block date
+  let labDate = "";
+  const ld = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(labs);
+  if (ld && +ld[1] >= 1 && +ld[1] <= 12 && +ld[2] >= 1 && +ld[2] <= 31) {
+    const y = ld[3] ? (ld[3].length === 2 ? 2000 + +ld[3] : +ld[3]) : +date.slice(0, 4);
+    labDate = `${y}-${pad(+ld[1])}-${pad(+ld[2])}`;
+  }
   // plan
   const plan = impPlan(f.plan, procSide);
   if (!plan.blocks.length) warn.push("No block recognized in the Plan: pick one after adding (the usual-plan suggestion will show).");
@@ -2351,7 +2397,7 @@ function impPatient(chunk, date) {
   const notes = f.plan ? "Plan (from email): " + f.plan : "";
   const e = normalize({ date, time: t ? t.time : "", location: room, createdAt: new Date().toISOString(), indication: proc,
     age, ageUnit, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon, pmh, homeMeds,
-    neuraxial: { plt, inr, ptt, spine: "" }, blocks: [], meds: [], imported: true });
+    neuraxial: { plt, inr, ptt, spine: "", labDate }, blocks: [], meds: [], imported: true, anesPlan: plan.anes });
   plan.blocks.forEach(b => {
     const j = e.blocks.push({ ...b, intent: plan.surgical ? "surgical" : "analgesic" }) - 1;
     applySuggestion(e, j, true);
@@ -2378,13 +2424,14 @@ function impRender() {
     const blocks = e.blocks.map(b => `<span class="chip block">${esc(blockLabel(b))}</span>`).join("");
     const meds = e.meds.map(m => `${LA[m.drug].short} ${m.pct}%${m.ml ? " " + volText(medRules(e, m).b, m.ml) : ""}${num(m.epi) ? " + epi" : ""}${m.dexOn ? " + dex" : ""}`).join(" · ");
     const ac = e.anticoag.map(k => (ANTICOAG.find(a => a.k === k) || {}).short).filter(Boolean).join(", ");
-    const labs = ["plt", "inr", "ptt"].filter(k => e.neuraxial[k] !== "").map(k => `${k.toUpperCase()} ${e.neuraxial[k]}`).join(" · ");
+    const labs = ["plt", "inr", "ptt"].filter(k => e.neuraxial[k] !== "").map(k => `${k.toUpperCase()} ${e.neuraxial[k]}`).concat(labDateText(e) ? ["drawn " + labDateText(e)] : []).join(" · ");
     return `<article class="impcard${it.dup ? " dup" : ""}">
       <label class="imp-head"><input type="checkbox" data-imp="${i}"${it.dup ? "" : " checked"}>
         <span><b class="mono">${esc(e.time || "--:--")}</b> ${e.location ? `<b>${esc(e.location)}</b> · ` : ""}${esc(e.indication || "No procedure")}${it.dup ? ` <em class="cflag">already on board</em>` : ""}</span></label>
       <dl class="cinfo">
         ${row("Block", (blocks || none("None recognized")) + (meds ? `<span class="sub">${esc(meds)}</span>` : ""))}
         ${row("Surgeon", e.surgeon ? `<b>${esc(e.surgeon)}</b>` : none("Not listed"))}
+        ${row("Anesthesia", e.anesPlan ? `<span class="chip anes anes-${e.anesPlan}">${anesLabel(e.anesPlan)}</span>` : none("Not stated"))}
         ${row("Where", e.intraop ? "In the OR (verbal consent)" : "Block area")}
         ${row("Patient", [ageLabel(e), e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
         ${row("Allergies", e.allergies ? esc(e.allergies) : none("Not on file"))}

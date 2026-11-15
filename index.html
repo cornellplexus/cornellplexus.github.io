@@ -387,13 +387,19 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 @media (prefers-reduced-motion: reduce) { .tip::after { transition: none; } }
 /* Schedule (compact) view */
 .viewbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
-.timeline .crow-s { display: grid; grid-template-columns: 56px minmax(0, 1fr) 86px; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; margin-bottom: 5px; }
+.timeline .crow-s { display: grid; grid-template-columns: 56px minmax(0, 1fr) 76px auto; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; margin-bottom: 5px; }
 .crow-s.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .crow-s.st-done, .crow-s.st-cancelled { opacity: .6; }
 .crow-s.st-cancelled .cl1 { text-decoration: line-through; }
 .ctime { font: 600 .92rem var(--f-mono); font-variant-numeric: tabular-nums; }
 .ctime.est { color: var(--accent); }
-.cmain { all: unset; cursor: pointer; display: grid; gap: 1px; min-width: 0; }
+.cmain { all: unset; cursor: pointer; display: grid; gap: 1px; min-width: 0; border-radius: 6px; margin: -3px -5px; padding: 3px 5px; }
+.cmain:hover { background: var(--surface-2); }
+.cmain:hover .cl1 > span:first-of-type { text-decoration: underline; text-underline-offset: 2px; }
+.cchk { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 7px; padding: 6px 9px; font-size: .78rem; font-weight: 600; }
+.cchk[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.ctasks { grid-column: 1 / -1; margin-top: 2px; }
+.crow-s.open { border-color: var(--accent); }
 .cmain:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .cl1, .cl2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl1 { font-size: .9rem; }
@@ -422,7 +428,10 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .nowline-c { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: center; margin: 2px 0 7px; }
 .nowline-c span { font: 600 .72rem var(--f-mono); color: var(--crit); }
 .nowline-c hr { border: 0; border-top: 2px solid var(--crit); margin: 0; opacity: .7; }
-@media (max-width: 520px) { .timeline .crow-s { grid-template-columns: 46px minmax(0, 1fr) 64px; gap: 8px; padding: 7px 8px; } }
+@media (max-width: 520px) {
+  .timeline .crow-s { grid-template-columns: 44px minmax(0, 1fr) 52px auto; gap: 7px; padding: 7px 8px; }
+  .cchk { padding: 7px; } .cchk-t { display: none; }
+}
 /* End-of-case timing */
 .slot .time.est { color: var(--accent); }
 .slot .time .endtag { color: var(--accent); font-weight: 600; }
@@ -1570,13 +1579,19 @@ function compactHTML(e) {
   const blocks = e.blocks.map(blockLabel).filter(Boolean).join(" + ");
   const right = st === "done" ? `<span class="pill done">Done</span>` : st === "cancelled" ? `<span class="pill cancelled">Cancelled</span>`
     : `<span class="cbar${st === "ready" ? " ok" : st === "issue" ? " bad" : ""}" role="progressbar" aria-label="Pre-block checklist" aria-valuemin="0" aria-valuemax="${p.total}" aria-valuenow="${p.done}"><i style="width:${(p.done / p.total) * 100}%"></i></span><span class="ccount">${st === "ready" ? "Ready" : p.done + "/" + p.total}</span>`;
-  return `<li class="crow-s st-${st}${state.selected === e.id ? " selected" : ""}" data-id="${esc(e.id)}">
+  const exp = state.expanded.has(e.id);
+  return `<li class="crow-s st-${st}${state.selected === e.id ? " selected" : ""}${exp ? " open" : ""}" data-id="${esc(e.id)}">
     <span class="ctime${e.timing === "end" ? " est" : ""}">${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}</span>
-    <button type="button" class="cmain" data-act="open">
+    <button type="button" class="cmain" data-act="open" title="Edit patient details">
       <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.anesPlan ? ` <em class="anes-tag anes-${e.anesPlan}">${anesLabel(e.anesPlan)}</em>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
       <span class="cl2">${blocks ? esc(blocks) : "Block not chosen"}</span>
     </button>
     <span class="cright tip" tabindex="0" data-tip="${esc(waitTip(e))}">${right}</span>
+    <button type="button" class="cchk" data-act="toggle" aria-expanded="${exp}" aria-label="Checklist" title="Checklist">
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M3 4.5l1.5 1.5L7.5 3M3 10.5l1.5 1.5 3-3M3 16.5l1.5 1.5 3-3M10 5h7M10 11h7M10 17h7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="cchk-t">Checklist</span>
+    </button>
+    ${exp ? `<div class="ctasks tasks">${tasksHTML(e)}</div>` : ""}
   </li>`;
 }
 

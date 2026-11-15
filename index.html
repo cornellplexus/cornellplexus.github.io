@@ -391,7 +391,10 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .crow-s.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .crow-s.st-done, .crow-s.st-cancelled { opacity: .6; }
 .crow-s.st-cancelled .cl1 { text-decoration: line-through; }
-.ctime { font: 600 .92rem var(--f-mono); font-variant-numeric: tabular-nums; }
+.ctime { font: 600 .92rem var(--f-mono); font-variant-numeric: tabular-nums; display: grid; gap: 1px; min-width: 0; }
+.ctime .where { font: 600 .64rem var(--f-body); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.where.in-or { color: var(--crit); }
+.slot .time small.where { font-weight: 600; }
 .ctime.est { color: var(--accent); }
 .cmain { all: unset; cursor: pointer; display: grid; gap: 1px; min-width: 0; border-radius: 6px; margin: -3px -5px; padding: 3px 5px; }
 .cmain:hover { background: var(--surface-2); }
@@ -992,7 +995,7 @@ function normalize(d) {
     anticoag: [], anticoagNote: "", bleedRisk: false, bleedNote: "", infection: false, infectionNote: "", notes: "",
     blocks: [], neuraxial: {}, meds: [], doseWeight: "actual", tasks: {}, status: "active",
     source: "", neuroDeficit: false, neuroNote: "", wf: {}, intraopRequest: false, consentFrom: "", allergies: "",
-    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y", pmh: "", homeMeds: "", anes: [],
+    timing: "pre", caseStart: "", orMinutes: "", caseStartedAt: "", surgeon: "", ageUnit: "y", pmh: "", homeMeds: "", anes: [], blockLoc: "", blockLocOther: "", orRoom: "",
   }, d);
   // Older imported entries kept surgeon / PMH / meds as lines in notes; move each into its own field.
   [["surgeon", /^Surgeon:\s*(.+)$/m, /^Surgeon:.*(\n|$)/m], ["pmh", /^PMH\/PSH:\s*(.+)$/m, /^PMH\/PSH:.*(\n|$)/m], ["homeMeds", /^Meds:\s*(.+)$/m, /^Meds:.*(\n|$)/m]]
@@ -1006,6 +1009,8 @@ function normalize(d) {
   if (!Array.isArray(e.anes)) e.anes = [];
   if (e.anesPlan && !e.anes.length) e.anes = { ga: ["ga", "block"], surgical: ["block"], neuraxial: ["spinal", "block"], tbd: ["tbd"] }[e.anesPlan] || [];
   delete e.anesPlan;
+  // Older entries: a block done in the OR kept the OR room in the bay/room field. Split it out.
+  if (d.blockLoc === undefined && e.intraop) { e.blockLoc = "OR"; if (!e.orRoom) { e.orRoom = String(e.location || "").trim(); e.location = ""; } }
   e.wf = e.wf && typeof e.wf === "object" ? e.wf : {};
   e.tasks = e.tasks || {};
   if (e.tasks.marked === "no") e.tasks.marked = null;            // surgeon mark is now a single Done step
@@ -1522,7 +1527,7 @@ function cardHTML(e) {
   const exp = state.expanded.has(e.id);
   const medSum = medsCardHTML(e);
   return `<li class="slot st-${st}" data-id="${esc(e.id)}">
-    <div class="time${e.timing === "end" ? " est" : ""}">${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}${e.timing === "end" ? `<small class="endtag">end of case</small>` : ""}${e.location ? `<small>${esc(e.location)}</small>` : ""}</div>
+    <div class="time${e.timing === "end" ? " est" : ""}">${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}${e.timing === "end" ? `<small class="endtag">end of case</small>` : ""}${whereText(e) ? `<small class="where${e.blockLoc === "OR" ? " in-or" : ""}">${esc(whereText(e))}</small>` : ""}</div>
     <div class="rail"><span class="dot"></span></div>
     <div class="card-wrap"><article class="card${state.selected === e.id ? " selected" : ""}">
       <div class="card-head"><button class="oneliner" data-act="open">${esc(oneLiner(e))}</button>${e.example ? `<span class="pill example">Example</span>` : ""}<span class="pill ${st}">${pillTxt}</span></div>
@@ -1572,7 +1577,7 @@ function renderTimeline() {
   const issue = act.filter(e => stateOf(e) === "issue").length;
   const open = act.filter(e => e.status !== "done");
   let next = "";
-  if (isToday) { const n = open.find(e => e.time && e.time >= nowHM()) || open.find(e => e.time); if (n) next = `<span class="next">Next: <b>${esc(n.time)}</b> ${esc(n.location || oneLiner(n))}</span>`; }
+  if (isToday) { const n = open.find(e => e.time && e.time >= nowHM()) || open.find(e => e.time); if (n) next = `<span class="next">Next: <b>${esc(n.time)}</b> ${esc(whereText(n) || oneLiner(n))}</span>`; }
   $("#summary").innerHTML = list.length ? `<span><b>${act.length}</b> blocks</span><span><b>${ready}</b> ready</span><span><b>${done}</b> done</span>${issue ? `<span><b>${issue}</b> need a look</span>` : ""}${next}` : "";
 }
 const nowLine = t => `<li class="nowline" aria-label="Current time ${t}"><span>${t}</span><i></i><hr></li>`;
@@ -1586,7 +1591,7 @@ function compactHTML(e) {
     : `<span class="cbar${st === "ready" ? " ok" : st === "issue" ? " bad" : ""}" role="progressbar" aria-label="Pre-block checklist" aria-valuemin="0" aria-valuemax="${p.total}" aria-valuenow="${p.done}"><i style="width:${(p.done / p.total) * 100}%"></i></span><span class="ccount">${st === "ready" ? "Ready" : p.done + "/" + p.total}</span>`;
   const exp = state.expanded.has(e.id);
   return `<li class="crow-s st-${st}${state.selected === e.id ? " selected" : ""}${exp ? " open" : ""}" data-id="${esc(e.id)}">
-    <span class="ctime${e.timing === "end" ? " est" : ""}">${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}</span>
+    <span class="ctime${e.timing === "end" ? " est" : ""}"><span>${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}</span>${whereText(e) ? `<small class="where${e.blockLoc === "OR" ? " in-or" : ""}">${esc(whereText(e))}</small>` : ""}</span>
     <button type="button" class="cmain" data-act="open" title="Edit patient details">
       <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.anes.length ? ` <em class="anes-tag ${anesClass(e)}">${esc(anesText(e))}</em>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
       <span class="cl2">${blocks ? esc(blocks) : "Block not chosen"}</span>
@@ -1645,7 +1650,10 @@ function renderEditor() {
       <div class="grid">
         <label class="f">Block time<input id="f-time" type="time" data-f="time" value="${esc(e.time)}"${e.timing === "end" ? " disabled" : ""}></label>
         <label class="f">Date<input id="f-date" type="date" data-f="date" value="${esc(e.date)}"></label>
-        <label class="f">Bay / room<input id="f-loc" type="text" data-f="location" value="${esc(e.location)}" placeholder="Bay 4"></label>
+        <label class="f">Block location<select id="f-bloc" data-f="blockLoc">${BLOCK_LOCS.map(([v, l]) => opt(v, l, e.blockLoc)).join("")}</select></label>
+        ${e.blockLoc === "Other" ? `<label class="f">Where<input id="f-blocother" type="text" data-f="blockLocOther" value="${esc(e.blockLocOther)}" placeholder="e.g. ICU 12"></label>` : ""}
+        <label class="f">Patient's OR<input id="f-orroom" type="text" data-f="orRoom" value="${esc(e.orRoom)}" placeholder="e.g. G1"></label>
+        <label class="f">Bay<input id="f-loc" type="text" data-f="location" value="${esc(e.location)}" placeholder="e.g. Bay 4"></label>
         <label class="f">Coming from<select id="f-src" data-f="source">${SOURCES.map(v => opt(v, v || "–", e.source)).join("")}</select></label>
         <label class="f">Age<span class="agerow"><input id="f-age" class="num" type="number" inputmode="numeric" min="0" max="120" data-f="age" data-num value="${esc(e.age)}"><select id="f-ageu" data-f="ageUnit" aria-label="Age in years or months">${opt("y", "yrs", e.ageUnit)}${opt("mo", "mos", e.ageUnit)}</select></span></label>
         <label class="f">Sex<select id="f-sex" data-f="sex">${opt("", "–", e.sex)}${opt("F", "F", e.sex)}${opt("M", "M", e.sex)}</select></label>
@@ -1778,6 +1786,20 @@ function anesClass(e) {
   return "anes-surgical";
 }
 const anesSegHTML = e => ANES.map(([k, l]) => `<button type="button" class="tog anesbtn" data-act="anes" data-v="${k}" aria-pressed="${e.anes.includes(k)}">${e.anes.includes(k) ? "✓ " : ""}${l}</button>`).join("");
+const BLOCK_LOCS = [["", "–"], ["PACU N", "PACU N"], ["OR", "OR"], ["Pre-op", "Pre-op holding"], ["Floor", "Bedside / floor"], ["Other", "Other…"]];
+// Where the block physically happens: "OR G1", "PACU N · Bay 4", …
+function whereText(e) {
+  const room = String(e.orRoom || "").trim(), bay = String(e.location || "").trim();
+  const orTxt = room ? (/^or\b/i.test(room) ? room : "OR " + room) : "OR";
+  switch (e.blockLoc) {
+    case "OR": return orTxt;
+    case "PACU N": return bay ? `PACU N · ${bay}` : "PACU N";
+    case "Pre-op": return bay ? `Pre-op · ${bay}` : "Pre-op";
+    case "Floor": return bay ? `Bedside · ${bay}` : "Bedside";
+    case "Other": return e.blockLocOther || bay || "Other";
+    default: return bay;
+  }
+}
 function consentFromHTML(e) {
   if (!e.intraopRequest) return "";
   return `<label class="f">Phone consent from<input id="f-cfrom" type="text" data-f="consentFrom" value="${esc(e.consentFrom)}" placeholder="Relationship, e.g. daughter (HCP)"></label>`;
@@ -1980,7 +2002,15 @@ function onField(ev) {
     if (hadDeep !== hasDeepOrNeur(e)) editorEl.querySelector("#ed-neur").innerHTML = neurHTML(e);
   }
   if (/^blocks\.\d+\.(type|side|catheter)$/.test(f) || /^meds\.\d+\.block$/.test(f) || resuggest) rebuildBM(e);
+  if (f === "blockLoc") { // OR ⇄ "Block done in the OR" (verbal consent)
+    const wasOR = !!e.intraop; e.intraop = v === "OR";
+    if (e.intraop && !wasOR && !e.intraopRequest && !e.tasks.consent) e.tasks.consent = "na";
+    if (!e.intraop && wasOR) { if (e.tasks.consent === "na") e.tasks.consent = null; e.intraopRequest = false; }
+    renderEditor();
+  }
   if (f === "intraop") {
+    e.blockLoc = v ? "OR" : (e.blockLoc === "OR" ? "" : e.blockLoc);
+    { const bl = editorEl.querySelector("#f-bloc"); if (bl) bl.value = e.blockLoc; }
     if (v && !e.intraopRequest && !e.tasks.consent) e.tasks.consent = "na";
     if (!v && e.tasks.consent === "na") e.tasks.consent = null;
     if (!v && e.intraopRequest) { e.intraopRequest = false; editorEl.querySelector("#f-oreq").checked = false; editorEl.querySelector("#ed-cfrom").innerHTML = ""; } editorEl.querySelector("#ed-tasks").innerHTML = tasksHTML(e); }
@@ -2171,7 +2201,7 @@ function addEntry(orRequest) {
   if (orRequest && state.date !== dateKey(new Date())) { state.date = dateKey(new Date()); state.docs = new Map(); subscribe(); }
   const id = store.newId();
   const e = normalize({ id, date: state.date, time: orRequest ? nowHM() : defaultTime(), createdAt: new Date().toISOString(),
-    intraopRequest: !!orRequest, intraop: !!orRequest, location: orRequest ? "OR " : "",
+    intraopRequest: !!orRequest, intraop: !!orRequest, blockLoc: orRequest ? "OR" : "",
     blocks: [{ type: "", side: "", catheter: false, intent: "analgesic" }], meds: [{ drug: "bupi", pct: 0.25, ml: "", epi: 0, dexOn: false, block: 0, auto: true }] });
   state.docs.set(id, e); state.loaded = true;
   touch(id, 0);
@@ -2399,7 +2429,13 @@ function impPatient(chunk, date) {
   if (f.sex && /^[mf]/i.test(f.sex)) sex = f.sex[0].toUpperCase(); else if (as) sex = as[3][0].toUpperCase();
   // where the block happens
   const loc = String(f.loc || "").toLowerCase();
-  const intraop = /\bor\b|operating|intra-?op/.test(loc) && !/pacu|block room|pre-?op|holding/.test(loc);
+  let blockLoc = "", blockLocOther = "";
+  if (/pacu|block room|block area/.test(loc)) blockLoc = "PACU N";
+  else if (/pre-?op|holding/.test(loc)) blockLoc = "Pre-op";
+  else if (/\bor\b|operating|intra-?op/.test(loc)) blockLoc = "OR";
+  else if (/floor|bedside/.test(loc)) blockLoc = "Floor";
+  else if (f.loc && !blankish(f.loc)) { blockLoc = "Other"; blockLocOther = f.loc; }
+  const intraop = blockLoc === "OR";
   // blood thinners (AC field, plus anything in Meds)
   const acText = [f.ac, f.meds].filter(v => v && !blankish(v)).join(" ").toLowerCase();
   const anticoag = [];
@@ -2435,7 +2471,7 @@ function impPatient(chunk, date) {
   const pmh = f.pmh && !blankish(f.pmh) ? f.pmh : "";
   const homeMeds = f.meds && !blankish(f.meds) ? f.meds : "";
   const notes = f.plan ? "Plan (from email): " + f.plan : "";
-  const e = normalize({ date, time: t ? t.time : "", location: room, createdAt: new Date().toISOString(), indication: proc,
+  const e = normalize({ date, time: t ? t.time : "", location: "", orRoom: room, blockLoc, blockLocOther, createdAt: new Date().toISOString(), indication: proc,
     age, ageUnit, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon, pmh, homeMeds,
     neuraxial: { plt, inr, ptt, spine: "", labDate }, blocks: [], meds: [], imported: true, anes: plan.anes });
   plan.blocks.forEach(b => {
@@ -2467,12 +2503,12 @@ function impRender() {
     const labs = ["plt", "inr", "ptt"].filter(k => e.neuraxial[k] !== "").map(k => `${k.toUpperCase()} ${e.neuraxial[k]}`).concat(labDateText(e) ? ["drawn " + labDateText(e)] : []).join(" · ");
     return `<article class="impcard${it.dup ? " dup" : ""}">
       <label class="imp-head"><input type="checkbox" data-imp="${i}"${it.dup ? "" : " checked"}>
-        <span><b class="mono">${esc(e.time || "--:--")}</b> ${e.location ? `<b>${esc(e.location)}</b> · ` : ""}${esc(e.indication || "No procedure")}${it.dup ? ` <em class="cflag">already on board</em>` : ""}</span></label>
+        <span><b class="mono">${esc(e.time || "--:--")}</b> ${e.orRoom ? `<b>${esc(e.orRoom)}</b> · ` : ""}${esc(e.indication || "No procedure")}${it.dup ? ` <em class="cflag">already on board</em>` : ""}</span></label>
       <dl class="cinfo">
         ${row("Block", (blocks || none("None recognized")) + (meds ? `<span class="sub">${esc(meds)}</span>` : ""))}
         ${row("Surgeon", e.surgeon ? `<b>${esc(e.surgeon)}</b>` : none("Not listed"))}
         ${row("Anesthesia", e.anes.length ? `<span class="chip anes ${anesClass(e)}">${esc(anesText(e))}</span>` : none("Not stated"))}
-        ${row("Where", e.intraop ? "In the OR (verbal consent)" : "Block area")}
+        ${row("Block location", whereText(e) ? esc(whereText(e)) + (e.intraop ? " (verbal consent)" : "") : none("Not stated"))}
         ${row("Patient", [ageLabel(e), e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
         ${row("Allergies", e.allergies ? esc(e.allergies) : none("Not on file"))}
         ${row("PMH/PSH", e.pmh ? esc(e.pmh) : none("Not on file"))}

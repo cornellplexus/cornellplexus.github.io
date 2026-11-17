@@ -323,6 +323,10 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .impcard.dup { opacity: .7; }
 .imp-head { display: flex; gap: 10px; align-items: flex-start; font-size: 1rem; cursor: pointer; }
 .imp-head input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--accent); flex: none; }
+.impedit { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.impedit .f.miss input, .impedit .f.miss select { border-color: var(--warn); background: var(--warn-soft); }
+.impage { display: grid; grid-template-columns: minmax(0, 1fr) 58px; gap: 4px; }
+.imphint { margin: -2px 0 0; font-size: .78rem; }
 .impwarn { margin: 0; padding: 8px 10px 8px 26px; border-radius: 8px; background: var(--warn-soft); color: var(--ink); font-size: .8rem; display: grid; gap: 3px; }
 .savebox { border: 1px dashed var(--accent); border-radius: 9px; padding: 10px 12px; display: grid; gap: 6px; }
 .savebox .src { font-size: .66rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
@@ -2391,9 +2395,19 @@ setInterval(() => { if (state.loaded && state.date === dateKey(new Date())) rend
 
 /* ---------- import from the block email ---------- */
 // Field labels the email uses. Name / MRN / DOB are recognized only so they can be dropped: never imported.
-const IMP_LABEL_RE = /(?:^|[\s,;|•])(procedure|room\s*\/\s*time|room|time|location of block|block location|surgeon|weight|wt|height|age|sex|pmh\s*\/\s*psh|pmh|psh|meds|medications|allergies|ac|anticoagulation|anticoagulants|labs|plan|name|patient|mrn|dob|date of birth)\s*:/gi;
-const IMP_KEY = { "room/time": "roomtime", "location of block": "loc", "block location": "loc", wt: "weight", "pmh/psh": "pmh", psh: "pmh", medications: "meds",
-  anticoagulation: "ac", anticoagulants: "ac", name: "phi", patient: "phi", mrn: "phi", dob: "phi", "date of birth": "phi" };
+// Longer labels come first so "Room/Time" wins over "Room", "Age/Sex" over "Age", "OR room" over "OR".
+const IMP_LABEL_RE = /(?:^|[\s,;|•*>-])(procedure|surgery|operation|room\s*\/\s*time|time\s*\/\s*room|or\s*room|or\s*#|room\s*#|room|or|case\s*start|start\s*time|block\s*time|time|location\s+of\s+(?:the\s+)?block|block\s+location|block\s+site|location|where|pacu\s*bay|bay|surgeon|attending\s+surgeon|weight|wt|height|ht|bmi|asa|age\s*\/\s*sex|age\s*\/\s*gender|age|sex|gender|pmh\s*\/\s*psh|pmh|psh|hx|history|meds|medications|home\s+meds|allergies|allergy|ac|anticoagulation|anticoagulants|blood\s+thinners?|labs|lab|plan|block\s+plan|blocks?|regional|anesthesia|anesthetic|anesthesiologist|attending|resident|crna|notes?|comments?|name|patient\s+name|patient|pt|mrn|dob|date\s+of\s+birth)\s*:/gi;
+const IMP_KEY = { surgery: "procedure", operation: "procedure",
+  "room/time": "roomtime", "time/room": "roomtime", "or room": "room", "or #": "room", "room #": "room", or: "room",
+  "case start": "time", "start time": "time", "block time": "time",
+  "location of block": "loc", "location of the block": "loc", "block location": "loc", "block site": "loc", location: "loc", where: "loc",
+  "pacu bay": "bay", "attending surgeon": "surgeon", wt: "weight", ht: "height",
+  "age/sex": "age", "age/gender": "age", gender: "sex",
+  "pmh/psh": "pmh", psh: "pmh", hx: "pmh", history: "pmh", medications: "meds", "home meds": "meds", allergy: "allergies",
+  anticoagulation: "ac", anticoagulants: "ac", "blood thinner": "ac", "blood thinners": "ac", lab: "labs",
+  "block plan": "plan", block: "plan", blocks: "plan", regional: "plan", anesthetic: "anesthesia",
+  anesthesiologist: "skip", attending: "skip", resident: "skip", crna: "skip", bmi: "skip", asa: "skip", note: "notes", comment: "notes", comments: "notes",
+  name: "phi", "patient name": "phi", mrn: "phi", dob: "phi", "date of birth": "phi" };
 const blankish = v => /^(not on file|n\/?a|unknown|tbd|pending|[-–—]|)$/i.test(String(v || "").trim().replace(/\.$/, ""));
 // Plan text → block types. Order matters: specific names first; each match is masked so it isn't counted twice.
 const PLAN_BLOCKS = [
@@ -2416,12 +2430,17 @@ const AC_WORDS = [[/aspirin|\basa\b/, "asa"], [/plavix|clopidogrel/, "clopidogre
 function impFields(chunk) {
   const hits = []; let m; IMP_LABEL_RE.lastIndex = 0;
   while ((m = IMP_LABEL_RE.exec(chunk))) hits.push({ key: m[1].toLowerCase().replace(/\s*\/\s*/, "/").replace(/\s+/g, " "), start: m.index, end: IMP_LABEL_RE.lastIndex });
-  const f = {};
+  const f = {}; let clean = chunk;
   hits.forEach((h, i) => {
-    const val = chunk.slice(h.end, i + 1 < hits.length ? hits[i + 1].start : chunk.length).replace(/\s+/g, " ").trim();
-    const k = IMP_KEY[h.key] || h.key;
+    const raw = chunk.slice(h.end, i + 1 < hits.length ? hits[i + 1].start : chunk.length);
+    const val = raw.replace(/\s+/g, " ").trim();
+    let k = IMP_KEY[h.key] || h.key;
+    // "Patient: 67 yo M" is a one-liner, not a name: keep it as age/sex. Anything else under Patient/Pt is dropped.
+    if (k === "patient" || k === "pt") k = /^\d{1,3}\s*[-a-z\/.]*\s*[-\s]*(m|f|male|female)?\b/i.test(val) && !/[a-z]{3,},/i.test(val) ? "oneliner" : "phi";
+    if (k === "phi") clean = clean.replace(raw, " ");
     f[k] = f[k] ? f[k] + "; " + val : val;
   });
+  f._clean = clean.replace(IMP_LABEL_RE, " ");
   return f;
 }
 function impTime(s) {
@@ -2475,36 +2494,57 @@ function impPatient(chunk, date) {
   const proc = f.procedure || "";
   const procSide = sideFromText(proc.toLowerCase());
   const rt = f.roomtime || [f.room, f.time].filter(Boolean).join(" ");
-  const t = impTime(rt) || impTime(f.time);
-  const room = (f.room || (t ? rt.replace(t.token, "") : rt)).replace(/[@,;|]+/g, " ").replace(/\s+/g, " ").trim();
-  if (!t) warn.push("No time found: set the block time after adding.");
+  // time: the labelled time first, then any clock time in the patient's text (not inside labs)
+  const t = impTime(rt) || impTime(f.time) || impTime([f.labs, f.plan, f.meds, f.pmh].reduce((s, v) => v ? s.split(v).join(" ") : s, String(f._clean)));
+  let room = (f.room || (t ? rt.replace(t.token, "") : rt)).replace(/\b(or|room|rm|#|at)\b|[@,;|#]+/gi, " ").replace(/\s+/g, " ").trim();
+  if (blankish(room)) room = "";
+  if (!room) { const rm = /\b(?:or|room|rm)\s*#?\s*([a-z]{0,2}\s?\d{1,2}[a-z]?)\b/i.exec(f._clean); if (rm) room = rm[1].replace(/\s+/g, "").toUpperCase(); }
   // weight
   let weightKg = "";
   if (f.weight && !blankish(f.weight)) {
     const w = /(\d+(?:\.\d+)?)\s*(kg|kgs|lbs?|pounds?)?/i.exec(f.weight);
     if (w) { let n = +w[1]; const u = (w[2] || "").toLowerCase(); if (u.startsWith("l") || u.startsWith("p") || (!u && n > 180)) n = n / 2.2046; weightKg = Math.round(n * 10) / 10; }
   }
-  if (!weightKg) warn.push("Weight not on file: max local anesthetic dose can't be calculated until it's entered.");
-  // age / sex (from Age:/Sex: fields or a "67F" / "67 yo F" anywhere)
+  // age / sex: Age:/Sex: fields, a "Patient: 67F" one-liner, or "67F", "67 yo M", "67-year-old female", "6 mo M", "F 67" anywhere
   let age = "", sex = "", ageUnit = "y";
-  const as = /\b(\d{1,3})\s*(mos?|months?\s*old|months?|m\/o|wks?|weeks?\s*old|weeks?|yo|y\/o|y\.o\.|yrs?|years?\s*old|y)?\s*-?\s*(m|f|male|female)\b/i.exec(chunk.replace(IMP_LABEL_RE, " "));
+  const UNIT = "(mos?|months?[\\s-]*old|months?|m\\/o|wks?|weeks?[\\s-]*old|weeks?|yo|y\\/o|y\\.o\\.?|yrs?|years?[\\s-]*old|years?|y)";
+  const SEX = "(m|f|male|female|man|woman|boy|girl)";
+  const pool = [f.age, f.oneliner, f._clean].filter(Boolean).join(" ; ");
+  let as = new RegExp("\\b(\\d{1,3}(?:\\.\\d)?)[\\s-]*" + UNIT + "?[\\s,-]*" + SEX + "\\b", "i").exec(pool);
+  if (!as) { const r = new RegExp("\\b" + SEX + "[\\s,/-]*(\\d{1,3})[\\s-]*" + UNIT + "?(?![\\d.:/%])", "i").exec(pool); if (r) as = [r[0], r[2], r[3], r[1]]; }
+  if (!as) { const r = new RegExp("\\b(\\d{1,3}(?:\\.\\d)?)[\\s-]*" + UNIT + "(?![a-z])", "i").exec(pool); if (r) as = [r[0], r[1], r[2], ""]; }
   const setAge = (n, unit) => {
     unit = String(unit || "").toLowerCase();
     if (/^(mo|month|m\/o)/.test(unit)) { age = n; ageUnit = "mo"; }
     else if (/^w/.test(unit)) { age = Math.max(0, Math.round(n / 4.345 * 10) / 10); ageUnit = "mo"; }   // weeks → months
     else age = n;
   };
-  const fa = f.age && /(\d+(?:\.\d+)?)\s*([a-z\/]+)?/i.exec(f.age);
-  if (fa) setAge(+fa[1], fa[2]); else if (as) setAge(+as[1], as[2]);
-  if (f.sex && /^[mf]/i.test(f.sex)) sex = f.sex[0].toUpperCase(); else if (as) sex = as[3][0].toUpperCase();
+  const fa = f.age && /(\d+(?:\.\d+)?)\s*-?\s*([a-z\/.]+)?/i.exec(f.age);
+  if (fa && !/^(m|f|male|female)$/i.test(fa[2] || "")) setAge(+fa[1], fa[2]); else if (fa) setAge(+fa[1], ""); else if (as) setAge(+as[1], as[2]);
+  if (age > 120) age = "";
+  const sexWord = w => { w = String(w || "").toLowerCase(); return /^(m|male|man|boy)$/.test(w) ? "M" : /^(f|female|woman|girl)$/.test(w) ? "F" : ""; };
+  if (f.sex) sex = sexWord(String(f.sex).trim().split(/\W/)[0]);
+  if (!sex && as && as[3]) sex = sexWord(as[3]);
+  if (!sex) { const sm = /\b(male|female|man|woman|boy|girl)\b/i.exec(pool); if (sm) sex = sexWord(sm[1]); }
   // where the block happens
-  const loc = String(f.loc || "").toLowerCase();
+  const where = text => {
+    const l = String(text || "").toLowerCase();
+    if (/pacu|block room|block area|recovery/.test(l)) return "PACU N";
+    if (/pre-?op|holding|preop/.test(l)) return "Pre-op";
+    if (/\bin (?:the )?or\b|^\s*or\b|\bor\s*[a-z]?\d|operating|intra-?op|after induction|asleep|end of (?:the )?case/.test(l)) return "OR";
+    if (/floor|bedside|\bicu\b|ward/.test(l)) return "Floor";
+    return "";
+  };
   let blockLoc = "", blockLocOther = "";
-  if (/pacu|block room|block area/.test(loc)) blockLoc = "PACU N";
-  else if (/pre-?op|holding/.test(loc)) blockLoc = "Pre-op";
-  else if (/\bor\b|operating|intra-?op/.test(loc)) blockLoc = "OR";
-  else if (/floor|bedside/.test(loc)) blockLoc = "Floor";
-  else if (f.loc && !blankish(f.loc)) { blockLoc = "Other"; blockLocOther = f.loc; }
+  if (f.loc && !blankish(f.loc)) { blockLoc = where(f.loc); if (!blockLoc) { blockLoc = "Other"; blockLocOther = f.loc; } }
+  if (!blockLoc) blockLoc = where(f.plan) || where([f.notes, f.oneliner].join(" ")) ;
+  if (!blockLoc) warn.push("Block location not stated: pick PACU N, OR, Pre-op… below.");
+  // bay: "Bay: 12", "PACU N bay 4", "PACU 12"
+  let bay = "";
+  const bm = /\bbay\s*#?\s*([a-z]?\d{1,3}[a-z]?)\b/i.exec([f.bay ? "bay " + f.bay : "", f.loc, f._clean].join(" ")) || (blockLoc !== "OR" && /\b(?:pacu\s*n?|pre-?op)\s*#?\s*(\d{1,3}[a-z]?)\b/i.exec(f.loc || ""));
+  if (bm) bay = bm[1].toUpperCase();
+  // In a "Room/Time: PACU N 8:30" email the "room" is really the block location, not an OR.
+  if (room && where(room) && where(room) !== "OR") { if (!blockLoc) blockLoc = where(room); room = ""; }
   const intraop = blockLoc === "OR";
   // blood thinners (AC field, plus anything in Meds)
   const acText = [f.ac, f.meds].filter(v => v && !blankish(v)).join(" ").toLowerCase();
@@ -2540,8 +2580,17 @@ function impPatient(chunk, date) {
   const surgeon = f.surgeon && !blankish(f.surgeon) ? f.surgeon.replace(/^dr\.?\s+/i, "") : "";
   const pmh = f.pmh && !blankish(f.pmh) ? f.pmh : "";
   const homeMeds = f.meds && !blankish(f.meds) ? f.meds : "";
-  const notes = f.plan ? "Plan (from email): " + f.plan : "";
-  const e = normalize({ date, time: t ? t.time : "", location: "", orRoom: room, blockLoc, blockLocOther, createdAt: new Date().toISOString(), indication: proc,
+  const notes = [f.plan ? "Plan (from email): " + f.plan : "", f.anesthesia && !blankish(f.anesthesia) ? "Anesthesia (from email): " + f.anesthesia : "",
+    f.notes && !blankish(f.notes) ? "Notes (from email): " + f.notes : ""].filter(Boolean).join("\n");
+  let heightCm = "";
+  if (f.height && !blankish(f.height)) {
+    const fi = /(\d)\s*(?:'|ft|feet)\s*(\d{1,2})?/i.exec(f.height), cm = /(\d+(?:\.\d+)?)\s*(cm|m\b|in|inches|")?/i.exec(f.height);
+    if (fi) heightCm = Math.round((+fi[1] * 12 + +(fi[2] || 0)) * 2.54);
+    else if (cm) { const n = +cm[1], u = (cm[2] || "").toLowerCase(); heightCm = u === "m" || n < 3 ? Math.round(n * 100) : /^(in|")/.test(u) || n < 90 ? Math.round(n * 2.54) : Math.round(n); }
+  }
+  // The plan's anesthesia wording, plus an "Anesthesia:" line if the email has one
+  if (f.anesthesia) impPlan(f.anesthesia, procSide).anes.forEach(a => { if (a !== "block" && !plan.anes.includes(a)) plan.anes.push(a); });
+  const e = normalize({ date, time: t ? t.time : "", location: bay, orRoom: room, heightCm, blockLoc, blockLocOther, createdAt: new Date().toISOString(), indication: proc,
     age, ageUnit, sex, weightKg, intraop, anticoag, anticoagNote: acMeaningful ? f.ac : "", allergies, notes, surgeon, pmh, homeMeds,
     neuraxial: { plt, inr, ptt, spine: "", labDate }, blocks: [], meds: [], imported: true, anes: plan.anes });
   plan.blocks.forEach(b => {
@@ -2555,9 +2604,30 @@ function impPatient(chunk, date) {
   e.meds.filter(target).forEach(m => { if (plan.dex && medRules(e, m).dexOk) m.dexOn = true; if (plan.epi && !LA[m.drug].fixed) m.epi = 200000; });
   return { e, warn, planText: f.plan || "", surgeon: f.surgeon || "" };
 }
+// Split the email into patients: at each "Procedure:" (or "Surgery:"), else at whichever label starts each patient.
 function impParse(text, date) {
-  const chunks = String(text || "").split(/(?=procedure\s*:)/i).filter(c => /procedure\s*:/i.test(c));
-  return chunks.map(c => impPatient(c, date));
+  text = String(text || "").replace(/\r/g, "").replace(/[\u00a0\u2007\u202f]/g, " ").replace(/\*\*/g, "");
+  let starter = /(?:^|[\s,;|•*>-])(procedure|surgery|operation)\s*:/i.exec(text);
+  if (!starter) { IMP_LABEL_RE.lastIndex = 0; starter = IMP_LABEL_RE.exec(text); IMP_LABEL_RE.lastIndex = 0; }
+  if (!starter) return [];
+  const word = /^(procedure|surgery|operation)$/i.test(starter[1]) ? "(?:procedure|surgery|operation)" : starter[1].replace(/\s+/g, "\\s+").replace(/\//g, "\\s*\\/\\s*");
+  const re = new RegExp("(?:^|[\\s,;|•*>-])" + word + "\\s*:", "gi");
+  const starts = []; let m;
+  while ((m = re.exec(text))) starts.push(m.index);
+  // Begin each patient at the start of its line, so a "1." or "67M" just before the label stays with that patient.
+  const cut = starts.map((i, n) => {
+    if (n === 0) return 0;
+    // A blank line between two patients marks where the next one begins (keeps a "1. 67 yo M" or "Name:" heading with its patient).
+    const between = text.slice(starts[n - 1], i), gap = between.search(/\n[ \t]*\n(?![\s\S]*\n[ \t]*\n)/);
+    // ...but only if what sits between that blank line and the label is a heading (name/MRN/age/sex), not the end of the last patient.
+    if (gap >= 0) {
+      const head = text.slice(starts[n - 1] + gap + 1, i); IMP_LABEL_RE.lastIndex = 0;
+      const keys = [...head.matchAll(IMP_LABEL_RE)].map(h => IMP_KEY[h[1].toLowerCase().replace(/\s*\/\s*/, "/").replace(/\s+/g, " ")] || h[1].toLowerCase());
+      if (keys.every(k => ["phi", "patient", "pt", "age", "sex"].includes(k))) return starts[n - 1] + gap + 1;
+    }
+    return Math.max(text.lastIndexOf("\n", i) + 1, starts[n - 1] + 1);
+  });
+  return cut.map((c, n) => text.slice(c, n + 1 < cut.length ? cut[n + 1] : text.length)).map(c => impPatient(c, date));
 }
 function impRender() {
   const out = $("#imp-out"), list = state.imp || [];
@@ -2574,12 +2644,22 @@ function impRender() {
     return `<article class="impcard${it.dup ? " dup" : ""}">
       <label class="imp-head"><input type="checkbox" data-imp="${i}"${it.dup ? "" : " checked"}>
         <span><b class="mono">${esc(e.time || "--:--")}</b> ${e.orRoom ? `<b>${esc(e.orRoom)}</b> · ` : ""}${esc(e.indication || "No procedure")}${it.dup ? ` <em class="cflag">already on board</em>` : ""}</span></label>
+      <div class="impedit" data-i="${i}">
+        <label class="f${e.time ? "" : " miss"}">Block time<input type="time" data-ie="time" value="${esc(e.time)}"></label>
+        <label class="f${e.blockLoc ? "" : " miss"}">Block location<select data-ie="blockLoc">${BLOCK_LOCS.map(([v, l]) => opt(v, l, e.blockLoc)).join("")}</select></label>
+        ${e.blockLoc === "Other" ? `<label class="f">Where<input type="text" data-ie="blockLocOther" value="${esc(e.blockLocOther)}" placeholder="e.g. ICU 12"></label>` : ""}
+        ${e.blockLoc && e.blockLoc !== "OR" && e.blockLoc !== "Other" ? `<label class="f">Bay<input type="text" data-ie="location" value="${esc(e.location)}" placeholder="e.g. 12"></label>` : ""}
+        <label class="f${e.orRoom ? "" : " miss"}">Patient's OR<input type="text" data-ie="orRoom" value="${esc(e.orRoom)}" placeholder="e.g. G1"></label>
+        <label class="f${e.age !== "" ? "" : " miss"}">Age<span class="impage"><input type="number" inputmode="decimal" min="0" class="num" data-ie="age" value="${esc(e.age)}"><select data-ie="ageUnit">${opt("y", "y", e.ageUnit)}${opt("mo", "mo", e.ageUnit)}</select></span></label>
+        <label class="f${e.sex ? "" : " miss"}">Sex<select data-ie="sex">${opt("", "–", e.sex)}${opt("M", "M", e.sex)}${opt("F", "F", e.sex)}</select></label>
+        <label class="f${e.weightKg ? "" : " miss"}">Weight (kg)<input type="number" inputmode="decimal" min="0" class="num" data-ie="weightKg" value="${esc(e.weightKg)}"></label>
+      </div>
+      ${!e.weightKg ? `<p class="hint imphint">No weight: max local anesthetic dose can't be calculated until it's entered.</p>` : ""}
       <dl class="cinfo">
         ${row("Block", (blocks || none("None recognized")) + (meds ? `<span class="sub">${esc(meds)}</span>` : ""))}
         ${row("Surgeon", e.surgeon ? `<b>${esc(e.surgeon)}</b>` : none("Not listed"))}
         ${row("Anesthesia", e.anes.length ? `<span class="chip anes ${anesClass(e)}">${esc(anesText(e))}</span>` : none("Not stated"))}
-        ${row("Block location", whereText(e) ? esc(whereText(e)) + (e.intraop ? " (verbal consent)" : "") : none("Not stated"))}
-        ${row("Patient", [ageLabel(e), e.sex, e.weightKg ? e.weightKg + " kg" : ""].filter(Boolean).join(" ") || none("Age/sex/weight not given"))}
+        ${e.heightCm ? row("Height", esc(e.heightCm + " cm")) : ""}
         ${row("Allergies", e.allergies ? esc(e.allergies) : none("Not on file"))}
         ${row("PMH/PSH", e.pmh ? esc(e.pmh) : none("Not on file"))}
         ${row("Meds", e.homeMeds ? esc(e.homeMeds) : none("Not on file"))}
@@ -2599,6 +2679,19 @@ $("#imp-read").addEventListener("click", () => {
   impRender();
 });
 $("#imp-clear").addEventListener("click", () => { $("#imp-text").value = ""; state.imp = null; impRender(); });
+// Edits in the preview go straight into the entry that will be added.
+$("#imp-out").addEventListener("change", ev => {
+  const el = ev.target.closest("[data-ie]"); if (!el) return;
+  const it = state.imp[+el.closest(".impedit").dataset.i], e = it.e, k = el.dataset.ie;
+  e[k] = ["age", "weightKg"].includes(k) ? (el.value === "" ? "" : +el.value) : el.value;
+  if (k === "blockLoc") {
+    e.intraop = e.blockLoc === "OR";
+    if (e.intraop && !e.tasks.consent) e.tasks.consent = "na";
+    if (!e.intraop && e.tasks.consent === "na") delete e.tasks.consent;
+  }
+  if (k === "weightKg" || k === "age" || k === "ageUnit") e.blocks.forEach((b, j) => applySuggestion(e, j, false));
+  impRender();
+});
 $("#imp-out").addEventListener("click", ev => {
   if (!ev.target.closest("#imp-add")) return;
   if (!store) { toast("Still connecting. Try again in a moment."); return; }

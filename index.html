@@ -2443,7 +2443,10 @@ function impFields(chunk) {
   f._clean = clean.replace(IMP_LABEL_RE, " ");
   return f;
 }
-function impTime(s) {
+function impTime(s, military = false) {
+  // 24-hour "0730" / "1315" / "0730h" only in a labelled time field (elsewhere a 4-digit number is too often something else)
+  const mil = military && /\b([01]\d|2[0-3])([0-5]\d)\s*(?:h|hrs?)?\b(?![.\d%])/i.exec(s || "");
+  if (mil && !/\d:\d|\d\s*[ap]\.?m/i.test(s)) return { time: `${mil[1]}:${mil[2]}`, token: mil[0] };
   const m = /\b(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)?|\b(\d{1,2})\s*(a\.?m\.?|p\.?m\.?)/i.exec(s || ""); if (!m) return null;
   let h = +(m[1] || m[4]), min = +(m[2] || 0); const ap = (m[3] || m[5] || "").toLowerCase();
   if (ap.startsWith("p") && h < 12) h += 12; if (ap.startsWith("a") && h === 12) h = 0;
@@ -2495,8 +2498,8 @@ function impPatient(chunk, date) {
   const procSide = sideFromText(proc.toLowerCase());
   const rt = f.roomtime || [f.room, f.time].filter(Boolean).join(" ");
   // time: the labelled time first, then any clock time in the patient's text (not inside labs)
-  const t = impTime(rt) || impTime(f.time) || impTime([f.labs, f.plan, f.meds, f.pmh].reduce((s, v) => v ? s.split(v).join(" ") : s, String(f._clean)));
-  let room = (f.room || (t ? rt.replace(t.token, "") : rt)).replace(/\b(or|room|rm|#|at)\b|[@,;|#]+/gi, " ").replace(/\s+/g, " ").trim();
+  const t = impTime(rt, true) || impTime(f.time, true) || impTime([f.labs, f.plan, f.meds, f.pmh].reduce((s, v) => v ? s.split(v).join(" ") : s, String(f._clean)));
+  let room = (f.room || (t ? rt.replace(t.token, "") : rt)).replace(/\b(or|room|rm|#|at)\b|[@,;|#\/]+/gi, " ").replace(/\s+/g, " ").trim();
   if (blankish(room)) room = "";
   if (!room) { const rm = /\b(?:or|room|rm)\s*#?\s*([a-z]{0,2}\s?\d{1,2}[a-z]?)\b/i.exec(f._clean); if (rm) room = rm[1].replace(/\s+/g, "").toUpperCase(); }
   // weight
@@ -2605,29 +2608,40 @@ function impPatient(chunk, date) {
   return { e, warn, planText: f.plan || "", surgeon: f.surgeon || "" };
 }
 // Split the email into patients: at each "Procedure:" (or "Surgery:"), else at whichever label starts each patient.
+// Split the email into patients. Emails don't all start a patient with the same line ("Procedure:", "Room/Time:", a name…),
+// so a new patient begins wherever a label shows up again (a second "Room/Time:", a second "Procedure:"…).
+// The labels just before it that come earlier in a patient's usual order (Room/Time, Location, Age before Procedure) move with it.
 function impParse(text, date) {
   text = String(text || "").replace(/\r/g, "").replace(/[\u00a0\u2007\u202f]/g, " ").replace(/\*\*/g, "");
-  let starter = /(?:^|[\s,;|•*>-])(procedure|surgery|operation)\s*:/i.exec(text);
-  if (!starter) { IMP_LABEL_RE.lastIndex = 0; starter = IMP_LABEL_RE.exec(text); IMP_LABEL_RE.lastIndex = 0; }
-  if (!starter) return [];
-  const word = /^(procedure|surgery|operation)$/i.test(starter[1]) ? "(?:procedure|surgery|operation)" : starter[1].replace(/\s+/g, "\\s+").replace(/\//g, "\\s*\\/\\s*");
-  const re = new RegExp("(?:^|[\\s,;|•*>-])" + word + "\\s*:", "gi");
-  const starts = []; let m;
-  while ((m = re.exec(text))) starts.push(m.index);
-  // Begin each patient at the start of its line, so a "1." or "67M" just before the label stays with that patient.
-  const cut = starts.map((i, n) => {
-    if (n === 0) return 0;
-    // A blank line between two patients marks where the next one begins (keeps a "1. 67 yo M" or "Name:" heading with its patient).
-    const between = text.slice(starts[n - 1], i), gap = between.search(/\n[ \t]*\n(?![\s\S]*\n[ \t]*\n)/);
-    // ...but only if what sits between that blank line and the label is a heading (name/MRN/age/sex), not the end of the last patient.
-    if (gap >= 0) {
-      const head = text.slice(starts[n - 1] + gap + 1, i); IMP_LABEL_RE.lastIndex = 0;
-      const keys = [...head.matchAll(IMP_LABEL_RE)].map(h => IMP_KEY[h[1].toLowerCase().replace(/\s*\/\s*/, "/").replace(/\s+/g, " ")] || h[1].toLowerCase());
-      if (keys.every(k => ["phi", "patient", "pt", "age", "sex"].includes(k))) return starts[n - 1] + gap + 1;
-    }
-    return Math.max(text.lastIndexOf("\n", i) + 1, starts[n - 1] + 1);
+  const hits = []; let m; IMP_LABEL_RE.lastIndex = 0;
+  while ((m = IMP_LABEL_RE.exec(text))) {
+    const raw = m[1].toLowerCase().replace(/\s*\/\s*/, "/").replace(/\s+/g, " ");
+    let key = IMP_KEY[raw] || raw;
+    if (key === "phi" || key === "skip") key += ":" + raw;            // Name, MRN and DOB are different lines
+    hits.push({ key, pos: m.index + m[0].search(/[a-z]/i) });
+  }
+  IMP_LABEL_RE.lastIndex = 0;
+  if (!hits.some(h => h.key === "procedure")) return [];
+  const heading = k => /^(phi|patient|pt|age|sex)\b/.test(k);
+  const order = [], startHits = [0]; let seen = new Set();
+  hits.forEach((h, j) => {
+    if (!seen.has(h.key)) { seen.add(h.key); if (startHits.length === 1) order.push(h.key); return; }   // order = the first patient's
+    const before = k => { if (heading(k)) return true; const a = order.indexOf(k), b = order.indexOf(h.key); return a >= 0 && a < b; };
+    let b = j; const recStart = startHits[startHits.length - 1];
+    while (b - 1 > recStart && before(hits[b - 1].key) && !hits.slice(b, j).some(x => x.key === hits[b - 1].key)) b--;
+    startHits.push(b); seen = new Set(hits.slice(b, j + 1).map(x => x.key));
   });
-  return cut.map((c, n) => text.slice(c, n + 1 < cut.length ? cut[n + 1] : text.length)).map(c => impPatient(c, date));
+  const cut = startHits.map((b, n) => {
+    if (n === 0) return 0;
+    const pos = hits[b].pos, prevPos = hits[b - 1].pos;
+    let c = Math.max(text.lastIndexOf("\n", pos) + 1, prevPos + 1);
+    // An unlabelled heading just above ("1. 67 yo M", "Pt 2"), after a blank line, belongs to this patient.
+    const between = text.slice(prevPos, c), gap = between.search(/\n[ \t]*\n(?![\s\S]*\n[ \t]*\n)/);
+    if (gap >= 0) { const head = text.slice(prevPos + gap + 1, c).trim(); if (head && head.length < 120) c = prevPos + gap + 1; }
+    return c;
+  });
+  return cut.map((c, n) => text.slice(c, n + 1 < cut.length ? cut[n + 1] : text.length))
+    .filter(c => /(?:procedure|surgery|operation)\s*:/i.test(c) || cut.length === 1).map(c => impPatient(c, date));
 }
 function impRender() {
   const out = $("#imp-out"), list = state.imp || [];

@@ -408,6 +408,8 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .ctasks { grid-column: 1 / -1; margin-top: 2px; }
 .crow-s.open { border-color: var(--accent); }
 .cmain:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.cl1 .cwt { font-style: normal; font-family: var(--f-mono); font-size: .8rem; color: var(--muted); }
+.cl3 { font-size: .76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl1, .cl2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl1 { font-size: .9rem; }
 .cl1 b { font-family: var(--f-mono); font-weight: 600; }
@@ -1646,16 +1648,22 @@ function remindHTML(e, r, compact) {
 // One-line schedule row: time, age/sex, surgery, blocks, progress.
 function compactHTML(e) {
   const st = stateOf(e), p = progress(e);
-  const who = `${ageLabel(e)}${e.sex || ""}` || "–";
+  const who = `${ageLabel(e)}${e.sex || ""}` || "–", wt = num(e.weightKg) ? `${e.weightKg}kg` : "";
   const blocks = e.blocks.map(blockLabel).filter(Boolean).join(" + ");
+  // The different syringes, without volumes: "Bupi 0.5% + dex + epi · Bupi 0.25% plain"
+  const medKinds = [...new Set(e.meds.filter(m => LA[m.drug]).map(m => {
+    const adds = [m.dexOn ? "dex" : "", num(m.epi) ? "epi" : ""].filter(Boolean);
+    return `${LA[m.drug].short}${m.drug === "lipo" ? "" : " " + m.pct + "%"}${adds.length ? " + " + adds.join(" + ") : m.drug === "lipo" ? "" : " plain"}`;
+  }))].join(" · ");
   const right = st === "done" ? `<span class="pill done">Done</span>` : st === "cancelled" ? `<span class="pill cancelled">Cancelled</span>`
     : `<span class="cbar${st === "ready" ? " ok" : st === "issue" ? " bad" : ""}" role="progressbar" aria-label="Pre-block checklist" aria-valuemin="0" aria-valuemax="${p.total}" aria-valuenow="${p.done}"><i style="width:${(p.done / p.total) * 100}%"></i></span><span class="ccount">${st === "ready" ? "Ready" : p.done + "/" + p.total}</span>`;
   const exp = state.expanded.has(e.id);
   return `<li class="crow-s st-${st}${state.selected === e.id ? " selected" : ""}${exp ? " open" : ""}" data-id="${esc(e.id)}">
     <span class="ctime${e.timing === "end" ? " est" : ""}"><span>${e.timing === "end" && e.time ? "~" : ""}${esc(e.time || "--:--")}</span>${whereText(e) ? `<small class="where${e.blockLoc === "OR" ? " in-or" : ""}">${esc(whereText(e))}</small>` : ""}</span>
     <button type="button" class="cmain" data-act="open" title="Edit patient details">
-      <span class="cl1"><b>${esc(who)}</b>${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.anes.length ? ` <em class="anes-tag ${anesClass(e)}">${esc(anesText(e))}</em>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
+      <span class="cl1"><b>${esc(who)}</b>${wt ? ` <i class="cwt">${esc(wt)}</i>` : ""}${e.indication ? ` <span>${esc(e.indication)}</span>` : ""}${e.surgeon ? ` <span class="csurg">· ${esc(e.surgeon)}</span>` : ""}${e.anes.length ? ` <em class="anes-tag ${anesClass(e)}">${esc(anesText(e))}</em>` : ""}${e.intraopRequest ? ` <em class="cflag">OR req</em>` : ""}${e.timing === "end" ? ` <em class="cflag end">end of case</em>` : ""}</span>
       <span class="cl2">${blocks ? esc(blocks) : "Block not chosen"}</span>
+      ${medKinds ? `<span class="cl3">${esc(medKinds)}</span>` : ""}
     </button>
     <span class="cright tip" tabindex="0" data-tip="${esc(waitTip(e))}">${right}</span>
     <button type="button" class="cchk" data-act="toggle" aria-expanded="${exp}" aria-label="Checklist" title="Checklist">

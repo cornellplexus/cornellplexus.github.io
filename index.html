@@ -558,7 +558,7 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 <main class="importer" id="import" hidden>
   <section class="imp-in">
     <h2>Import from the block email</h2>
-    <p class="hint">Paste the whole email. Each patient (each "Procedure:") becomes its own entry. Check the preview, then add them to the timeline. Anything "not on file" is left blank for you to fill in.</p>
+    <p class="hint">Paste the whole email. Each patient (each "Procedure:") becomes its own entry. Check the preview, then add them to the timeline. Anything "not on file" is left blank for you to fill in. <span class="mono" title="If this isn't the latest, refresh the page">Reader v4 · Nov 23</span></p>
     <label class="f">Email text<textarea id="imp-text" rows="10" placeholder="Procedure: Left proximal humerus ORIF  Room/Time: G1 8:30AM&#10;Location of Block: OR&#10;Surgeon: …&#10;Weight: …&#10;Allergies: …&#10;AC: …&#10;Labs: …&#10;Plan: Left interscalene +T2 (bupi 0.5% + dex)"></textarea></label>
     <div class="imp-actions">
       <label class="f">Add to date<input id="imp-date" type="date"></label>
@@ -2472,7 +2472,7 @@ function impTime(s, military = false) {
   m = new RegExp("(?<![\\d.:])\\b(\\d{1,2})\\s*" + AP, "i").exec(s);                    // 7am, 1 pm
   if (m) return fin(+m[1], 0, m[2], m[0]);
   if (military) {
-    m = /(?<![\d.:\/])\b([01]?\d|2[0-3])([0-5]\d)\s*(?:h|hrs?)?(?![\d.%\/])\b/i.exec(s);  // 0730, 730, 1315h
+    m = /(?<![\d.:])\b([01]?\d|2[0-3])([0-5]\d)\s*(?:h|hrs?)?(?![\d.%\/])\b/i.exec(s);  // 0730, 730, 1315h
     if (m) return { time: `${pad(+m[1])}:${m[2]}`, token: m[0] };
   }
   return null;
@@ -2523,7 +2523,7 @@ function impPatient(chunk, date) {
   const rt = f.roomtime || [f.room, f.time].filter(Boolean).join(" ");
   // time: the labelled time first, then any clock time in the patient's text (not inside labs)
   const t = impTime(rt, true) || impTime(f.time, true) || impTime([f.labs, f.plan, f.meds, f.pmh].reduce((s, v) => v ? s.split(v).join(" ") : s, String(f._clean)));
-  let room = (f.room || (t ? rt.replace(t.token, "") : rt)).replace(/\b(or|room|rm|#|at)\b|[@,;|#\/]+/gi, " ").replace(/\s+/g, " ").trim();
+  let room = (f.room || (t ? rt.replace(t.token, "") : rt)).replace(/\b(or|room|rm|#|at)\b|[@,;|#\/]+|\s[-–—]+|[-–—]+(?=\s|$)/gi, " ").replace(/\s+/g, " ").trim();
   room = room.replace(/\b(to follow|tf|follows?|after|tbd)\b/gi, " ").replace(/\s+/g, " ").trim();
   if (blankish(room)) room = "";
   if (!t && /follow|\btf\b|after\b|\btbd\b/i.test(rt)) warn.push(`Time in the email is "${rt.trim()}": set the block time after adding.`);

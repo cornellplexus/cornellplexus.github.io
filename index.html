@@ -392,7 +392,16 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 .tip:hover::after, .tip:focus::after { opacity: 1; visibility: visible; transform: none; }
 @media (prefers-reduced-motion: reduce) { .tip::after { transition: none; } }
 /* Schedule (compact) view */
-.viewbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.viewbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.copyday-btn { font-size: .8rem; padding: 7px 11px; min-height: 34px; }
+.copypanel { background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; display: grid; gap: 10px; }
+.copypanel h3 { margin: 0; font-size: .95rem; }
+.copylist { display: grid; gap: 4px; max-height: 300px; overflow: auto; }
+.copylist label { display: flex; gap: 8px; align-items: center; font-size: .86rem; padding: 4px 2px; cursor: pointer; min-width: 0; }
+.copylist label span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.copylist input, .copyall input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.copyrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.copyrow .f { min-width: 150px; }
 .timeline .crow-s { display: grid; grid-template-columns: 56px minmax(0, 1fr) 76px auto; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; margin-bottom: 5px; }
 .crow-s.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .crow-s.st-done, .crow-s.st-cancelled { opacity: .6; }
@@ -551,7 +560,7 @@ details.codes textarea { width: 100%; margin-top: 8px; border-radius: 8px; borde
 </header>
 
 <main class="layout" id="board">
-  <section aria-label="Timeline"><div class="viewbar"><div class="seg" role="group" aria-label="Timeline view"><button type="button" data-view="compact" aria-pressed="false">Schedule</button><button type="button" data-view="detail" aria-pressed="true">Detailed</button></div></div><ol class="timeline" id="timeline"><li class="empty"><h2>Loading the day</h2><p>Fetching blocks for this date.</p></li></ol></section>
+  <section aria-label="Timeline"><div class="viewbar"><button type="button" class="ghost copyday-btn" data-act="copy-open">Copy to another day…</button><div class="seg" role="group" aria-label="Timeline view"><button type="button" data-view="compact" aria-pressed="false">Schedule</button><button type="button" data-view="detail" aria-pressed="true">Detailed</button></div></div><div class="copypanel" id="copypanel" hidden></div><ol class="timeline" id="timeline"><li class="empty"><h2>Loading the day</h2><p>Fetching blocks for this date.</p></li></ol></section>
   <aside class="editor" id="editor" aria-label="Block details"></aside>
 </main>
 
@@ -1686,6 +1695,62 @@ function openEditor(id) {
   if (isSheet()) document.body.classList.add("sheet-open");
   editorEl.scrollTop = 0;
 }
+/* ---------- copy patients to another day ---------- */
+// Copies keep the patient and the plan (history, labs, blocks, syringes, time, location) and start fresh:
+// empty checklist, active status, no case-started time.
+function copySorted() { return [...state.docs.values()].sort((a, b) => (a.time || "99").localeCompare(b.time || "99")); }
+function openCopy(onlyId) {
+  const all = copySorted(); if (!all.length) { toast("No patients on this day to copy."); return; }
+  const d = fromKey(state.date); d.setDate(d.getDate() + 1);
+  state.copy = { date: dateKey(d), picked: new Set(onlyId ? [onlyId] : all.filter(e => e.status !== "cancelled").map(e => e.id)), doneDate: "" };
+  renderCopy(); $("#copypanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function renderCopy() {
+  const el = $("#copypanel"), c = state.copy;
+  if (!c) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  if (c.doneDate) {
+    const txt = fromKey(c.doneDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    el.innerHTML = `<h3>Copied ${c.doneCount} patient${c.doneCount > 1 ? "s" : ""} to ${esc(txt)}</h3>
+      <div class="copyrow"><button type="button" class="primary" data-act="copy-go">Go to ${esc(txt)}</button><button type="button" class="ghost" data-act="copy-cancel">Stay here</button></div>`;
+    return;
+  }
+  const all = copySorted();
+  el.innerHTML = `<h3>Copy to another day</h3>
+    <p class="hint" style="margin:0">Copies keep the history, labs, blocks and syringes. The checklist starts fresh.</p>
+    <label class="copyall check"><input type="checkbox" id="copy-all"${all.every(e => c.picked.has(e.id)) ? " checked" : ""}> All patients on this day</label>
+    <div class="copylist">${all.map(e => `<label><input type="checkbox" data-copy="${esc(e.id)}"${c.picked.has(e.id) ? " checked" : ""}><span><b class="mono">${esc(e.time || "--:--")}</b> ${esc(oneLiner(e) || "No details")}${e.status === "cancelled" ? " (cancelled)" : e.status === "done" ? " (done)" : ""}</span></label>`).join("")}</div>
+    <div class="copyrow"><label class="f">Copy to<input type="date" id="copy-date" value="${esc(c.date)}"></label>
+      <button type="button" class="primary" data-act="copy-run">Copy ${c.picked.size} patient${c.picked.size === 1 ? "" : "s"}</button>
+      <button type="button" class="ghost" data-act="copy-cancel">Cancel</button></div>`;
+}
+$("#copypanel").addEventListener("change", ev => {
+  const c = state.copy; if (!c) return;
+  if (ev.target.id === "copy-date") { c.date = ev.target.value; return; }
+  if (ev.target.id === "copy-all") { c.picked = new Set(ev.target.checked ? copySorted().map(e => e.id) : []); renderCopy(); return; }
+  const id = ev.target.dataset.copy; if (!id) return;
+  ev.target.checked ? c.picked.add(id) : c.picked.delete(id); renderCopy();
+});
+function runCopy() {
+  const c = state.copy; if (!c) return;
+  if (!store) { toast("Still connecting. Try again in a moment."); return; }
+  if (!c.date) { toast("Pick the day to copy to."); return; }
+  const src = copySorted().filter(e => c.picked.has(e.id));
+  if (!src.length) { toast("Tick at least one patient to copy."); return; }
+  const now = new Date().toISOString();
+  src.forEach(e => {
+    const b = bodyOf(e);
+    Object.assign(b, { date: c.date, tasks: {}, status: "active", doneAt: "", caseStartedAt: "", wf: {}, createdAt: now, updatedAt: now, updatedBy: state.me || "", copiedFrom: e.date });
+    delete b.imported;
+    const n = normalize(b), id = store.newId();
+    if (n.timing === "end") IN_OR_STEPS.forEach(k => { n.tasks[k] = "na"; });     // end-of-case: patient is already in the OR
+    if (c.date === state.date) { n.id = id; state.docs.set(id, n); }
+    store.set(id, bodyOf(n)).catch(err => toast(errMsg(err)));
+  });
+  c.doneDate = c.date; c.doneCount = src.length;
+  if (c.date === state.date) renderTimeline();
+  renderCopy();
+}
 function closeEditor() {
   state.selected = null;
   editorEl.classList.remove("open");
@@ -1888,9 +1953,9 @@ function consentFromHTML(e) {
 }
 function statusBtns(e) {
   const st = stateOf(e);
-  if (e.status === "done") return `<button data-act="reopen">Reopen</button>`;
-  if (e.status === "cancelled") return `<button data-act="reopen">Restore</button>`;
-  return `${st === "ready" ? `<button class="go" data-act="done">Mark block done</button>` : `<button data-act="done">Mark block done</button>`}<button data-act="cancel">Cancel block</button>`;
+  if (e.status === "done") return `<button data-act="reopen">Reopen</button><button data-act="copy-one">Copy to another day</button>`;
+  if (e.status === "cancelled") return `<button data-act="reopen">Restore</button><button data-act="copy-one">Copy to another day</button>`;
+  return `${st === "ready" ? `<button class="go" data-act="done">Mark block done</button>` : `<button data-act="done">Mark block done</button>`}<button data-act="cancel">Cancel block</button><button data-act="copy-one">Copy to another day</button>`;
 }
 function acToggles(e) { return ANTICOAG.map(a => `<button type="button" class="tog" data-act="ac" data-k="${a.k}" aria-pressed="${e.anticoag.includes(a.k)}">${esc(a.label)}</button>`).join(""); }
 function asraHTML(e) {
@@ -2296,6 +2361,11 @@ document.addEventListener("click", ev => {
   const host = b.closest("[data-id]"); const id = host && host.dataset.id; const e = id && state.docs.get(id);
   const act = b.dataset.act;
   if (act === "add") return addEntry(false);
+  if (act === "copy-open") return openCopy(null);
+  if (act === "copy-one" && e) { const cid = e.id; closeEditor(); return openCopy(cid); }
+  if (act === "copy-cancel") { state.copy = null; renderCopy(); return; }
+  if (act === "copy-go") { const d = state.copy && state.copy.doneDate; state.copy = null; renderCopy(); if (d) goDate(d); return; }
+  if (act === "copy-run") return runCopy();
   if (act === "close") return closeEditor();
   if (act === "forget") { state.forgetAsk = b.dataset.lid; renderLearned(); return; }
   if (act === "forget-no") { state.forgetAsk = null; renderLearned(); return; }
@@ -2393,7 +2463,7 @@ document.addEventListener("click", ev => {
 });
 
 /* ---------- date nav ---------- */
-function goDate(k) { if (!k || k === state.date) return; state.date = k; if (state.selected) closeEditor(); state.docs = new Map(); subscribe(); }
+function goDate(k) { if (!k || k === state.date) return; state.date = k; if (state.copy) { state.copy = null; renderCopy(); } if (state.selected) closeEditor(); state.docs = new Map(); subscribe(); }
 $("#prev").onclick = () => { const d = fromKey(state.date); d.setDate(d.getDate() - 1); goDate(dateKey(d)); };
 $("#next").onclick = () => { const d = fromKey(state.date); d.setDate(d.getDate() + 1); goDate(dateKey(d)); };
 $("#today").onclick = () => goDate(dateKey(new Date()));
